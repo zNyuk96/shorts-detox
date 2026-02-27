@@ -42,6 +42,7 @@ export default function LoginScreen() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [testModeEnabled, setTestModeEnabled] = useState(TEST_MODE);
+  const [hasNavigated, setHasNavigated] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -59,15 +60,16 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, loading]);
 
-  // 테스트 모드 활성화 시 자동으로 홈 화면으로 이동
+  // 테스트 모드 활성화 시 자동으로 홈 화면으로 이동 (한 번만)
   useEffect(() => {
-    if (testModeEnabled && !loading) {
+    if (testModeEnabled && !loading && !hasNavigated) {
+      setHasNavigated(true);
       const timer = setTimeout(() => {
         router.replace("/(tabs)");
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [testModeEnabled, loading]);
+  }, [testModeEnabled, loading, hasNavigated]);
 
   const handleScroll = (e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -77,6 +79,7 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (testModeEnabled) {
       // 테스트 모드: 로그인 없이 홈 화면으로 이동
+      setHasNavigated(true);
       router.replace("/(tabs)");
       return;
     }
@@ -92,6 +95,7 @@ export default function LoginScreen() {
 
   const handleToggleTestMode = () => {
     setTestModeEnabled(!testModeEnabled);
+    setHasNavigated(false); // 모드 전환 시 플래그 리셋
   };
 
   if (loading) {
