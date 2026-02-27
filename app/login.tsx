@@ -59,6 +59,16 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, loading]);
 
+  // 테스트 모드 활성화 시 자동으로 홈 화면으로 이동
+  useEffect(() => {
+    if (testModeEnabled && !loading) {
+      const timer = setTimeout(() => {
+        router.replace("/(tabs)");
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [testModeEnabled, loading]);
+
   const handleScroll = (e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     setCurrentSlide(idx);
@@ -244,13 +254,16 @@ const styles = StyleSheet.create({
   slide: {
     paddingHorizontal: 4,
     justifyContent: "center",
+    alignItems: "center",
   },
   slideCard: {
     borderRadius: 24,
     padding: 28,
     borderWidth: 1,
     alignItems: "center",
+    justifyContent: "center",
     gap: 12,
+    marginHorizontal: 16,
   },
   slideEmoji: {
     fontSize: 52,
