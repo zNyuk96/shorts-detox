@@ -3,6 +3,7 @@ import { formatDuration, formatMinutes, getTodayDateString } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
 import { notificationService } from "@/lib/notification-service";
+import { foregroundService } from "@/lib/foreground-service";
 import { ScreenContainer } from "@/components/screen-container";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
@@ -103,23 +104,36 @@ export default function HomeScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
-  // 알람 체크
+  // 알람 체크 및 Recovery 페이지 트리거
   useEffect(() => {
     const checkAlerts = async () => {
       const thresholdMinutes = settings.alertThresholdMinutes || 30;
+      const thresholdMs = thresholdMinutes * 60 * 1000;
       const watchMinutes = Math.floor(todayWatchMs / 60000);
-      
+
       if (watchMinutes >= thresholdMinutes) {
         await notificationService.checkAndSendAlert(todayWatchMs, thresholdMinutes);
+        await foregroundService.triggerRecovery(todayWatchMs, thresholdMs);
+        router.push("/recovery" as any);
       }
     };
-    
+
     checkAlerts();
-    
+
     // 1분마다 알람 체크
     const interval = setInterval(checkAlerts, 60000);
     return () => clearInterval(interval);
   }, [todayWatchMs, settings.alertThresholdMinutes]);
+
+  // Foreground 서비스 초기화
+  useEffect(() => {
+    foregroundService.start((watchMs, thresholdMs) => {
+      router.push("/recovery" as any);
+    });
+    return () => {
+      foregroundService.stop();
+    };
+  }, []);
 
   const goalMs = settings.dailyGoalMinutes * 60 * 1000;
   const progress = goalMs > 0 ? todayWatchMs / goalMs : 0;
@@ -271,31 +285,29 @@ const styles = StyleSheet.create({
   streakBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
+    gap: 6,
   },
   streakFire: {
     fontSize: 16,
   },
   streakText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
   },
   progressCard: {
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
+    borderRadius: 20,
+    padding: 20,
     borderWidth: 1,
+    alignItems: "center",
+    gap: 12,
   },
   progressTime: {
     fontSize: 24,
     fontWeight: "700",
-    letterSpacing: -0.5,
   },
   progressLabel: {
     fontSize: 13,
@@ -303,6 +315,7 @@ const styles = StyleSheet.create({
   progressStatus: {
     fontSize: 14,
     textAlign: "center",
+    fontWeight: "500",
   },
   statsRow: {
     flexDirection: "row",
@@ -310,18 +323,17 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
+    gap: 6,
     borderWidth: 1,
   },
   statEmoji: {
-    fontSize: 22,
+    fontSize: 20,
   },
   statValue: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: "700",
   },
   statLabel: {
@@ -329,21 +341,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   messageCard: {
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
   },
   messageText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
     letterSpacing: -0.3,
-    marginBottom: -4,
+    marginTop: 4,
   },
   actionsGrid: {
     flexDirection: "row",
@@ -351,37 +363,33 @@ const styles = StyleSheet.create({
   },
   actionCard: {
     flex: 1,
-    borderRadius: 20,
-    padding: 20,
-    gap: 6,
-    justifyContent: "flex-end",
-    alignItems: "flex-start",
-    minHeight: 140,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+    gap: 8,
   },
   actionCardPrimary: {
-    flex: 1.2,
+    justifyContent: "center",
   },
   actionEmoji: {
     fontSize: 32,
-    marginBottom: 4,
   },
   actionTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
   },
   actionDesc: {
     fontSize: 12,
+    textAlign: "center",
   },
   actionColumn: {
-    flex: 0.8,
     gap: 12,
   },
   actionCardSmall: {
     flex: 1,
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 14,
+    padding: 12,
     alignItems: "center",
-    justifyContent: "center",
     gap: 6,
     borderWidth: 1,
   },
@@ -390,6 +398,6 @@ const styles = StyleSheet.create({
   },
   actionTitleSmall: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
 });
