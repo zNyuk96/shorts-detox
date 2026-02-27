@@ -1,5 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
+import { useAppContext } from "@/lib/app-context";
 import { startOAuthLogin } from "@/constants/oauth";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -16,7 +17,6 @@ import {
 } from "react-native";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const TEST_MODE = true;
 
 const ONBOARDING_SLIDES = [
   {
@@ -39,9 +39,10 @@ const ONBOARDING_SLIDES = [
 export default function LoginScreen() {
   const colors = useColors();
   const { isAuthenticated, loading } = useAuth();
+  const { setTestMode } = useAppContext();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [testModeEnabled, setTestModeEnabled] = useState(TEST_MODE);
+  const [showTestMode, setShowTestMode] = useState(true);
   const scrollRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -64,12 +65,15 @@ export default function LoginScreen() {
     setCurrentSlide(idx);
   };
 
+  const handleTestModeStart = async () => {
+    // 전역 테스트 모드 활성화 (AsyncStorage에 저장) 후 홈 화면으로 이동
+    setTestMode(true);
+    // AsyncStorage 저장이 완료될 때까지 약간 대기
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    router.replace("/(tabs)");
+  };
+
   const handleLogin = async () => {
-    if (testModeEnabled) {
-      // 테스트 모드: 로그인 없이 홈 화면으로 이동
-      router.replace("/(tabs)");
-      return;
-    }
     setIsLoggingIn(true);
     try {
       await startOAuthLogin();
@@ -80,10 +84,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleToggleTestMode = () => {
-    setTestModeEnabled(!testModeEnabled);
-  };
-
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
@@ -92,15 +92,17 @@ export default function LoginScreen() {
     );
   }
 
+  const CARD_WIDTH = SCREEN_WIDTH - 64;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Test Mode Toggle */}
       <Pressable
-        onPress={handleToggleTestMode}
+        onPress={() => setShowTestMode(!showTestMode)}
         style={({ pressed }) => [styles.testModeButton, { opacity: pressed ? 0.7 : 1 }]}
       >
         <Text style={[styles.testModeText, { color: colors.foreground }]}>
-          {testModeEnabled ? "🔧 TEST" : "🔒 PROD"}
+          {showTestMode ? "🔧 TEST" : "🔒 PROD"}
         </Text>
       </Pressable>
 
@@ -119,8 +121,8 @@ export default function LoginScreen() {
         </Text>
       </Animated.View>
 
-      {/* Onboarding Slides */}
-      <Animated.View style={[styles.slidesWrapper, { opacity: fadeAnim }]}>
+      {/* Onboarding Card - single card at a time, full width */}
+      <Animated.View style={[styles.cardArea, { opacity: fadeAnim }]}>
         <ScrollView
           ref={scrollRef}
           horizontal
@@ -128,11 +130,13 @@ export default function LoginScreen() {
           showsHorizontalScrollIndicator={false}
           scrollEventThrottle={16}
           onMomentumScrollEnd={handleScroll}
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          decelerationRate="fast"
+          snapToInterval={CARD_WIDTH + 16}
+          snapToAlignment="center"
+          contentContainerStyle={{ paddingHorizontal: 32 }}
         >
           {ONBOARDING_SLIDES.map((slide, i) => (
-            <View key={i} style={[styles.slide, { width: SCREEN_WIDTH - 48 }]}>
+            <View key={i} style={{ width: CARD_WIDTH, marginRight: i < ONBOARDING_SLIDES.length - 1 ? 16 : 0 }}>
               <View style={[styles.slideCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Text style={styles.slideEmoji}>{slide.emoji}</Text>
                 <Text style={[styles.slideTitle, { color: colors.foreground }]}>{slide.title}</Text>
@@ -159,30 +163,43 @@ export default function LoginScreen() {
         </View>
       </Animated.View>
 
-      {/* Login Button */}
+      {/* Login Buttons */}
       <Animated.View style={[styles.loginSection, { opacity: fadeAnim }]}>
-        <Pressable
-          onPress={handleLogin}
-          disabled={isLoggingIn}
-          style={({ pressed }) => [
-            styles.googleBtn,
-            { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.8 : 1 },
-          ]}
-        >
-          {isLoggingIn ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <>
-              <Text style={styles.googleIcon}>{testModeEnabled ? "⚡" : "G"}</Text>
-              <Text style={[styles.googleBtnText, { color: colors.foreground }]}>
-                {testModeEnabled ? "테스트 모드로 시작" : "Google로 계속하기"}
-              </Text>
-            </>
-          )}
-        </Pressable>
+        {showTestMode ? (
+          <Pressable
+            onPress={handleTestModeStart}
+            style={({ pressed }) => [
+              styles.primaryBtn,
+              { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 },
+            ]}
+          >
+            <Text style={styles.primaryBtnIcon}>⚡</Text>
+            <Text style={styles.primaryBtnText}>테스트 모드로 시작</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={handleLogin}
+            disabled={isLoggingIn}
+            style={({ pressed }) => [
+              styles.googleBtn,
+              { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.8 : 1 },
+            ]}
+          >
+            {isLoggingIn ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <Text style={styles.googleIcon}>G</Text>
+                <Text style={[styles.googleBtnText, { color: colors.foreground }]}>
+                  Google로 계속하기
+                </Text>
+              </>
+            )}
+          </Pressable>
+        )}
 
         <Text style={[styles.terms, { color: colors.muted }]}>
-          {testModeEnabled
+          {showTestMode
             ? "🔧 테스트 모드: 로그인 없이 앱을 사용할 수 있습니다"
             : "계속 진행하면 서비스 이용약관 및 개인정보처리방침에 동의하는 것으로 간주됩니다."}
         </Text>
@@ -199,7 +216,6 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
   },
@@ -219,7 +235,8 @@ const styles = StyleSheet.create({
   },
   logoSection: {
     alignItems: "center",
-    marginBottom: 32,
+    marginBottom: 24,
+    paddingHorizontal: 24,
   },
   logo: {
     width: 80,
@@ -237,20 +254,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
   },
-  slidesWrapper: {
+  cardArea: {
     flex: 1,
-    marginHorizontal: -24,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    gap: 16,
-  },
-  slide: {
     justifyContent: "center",
-    alignItems: "center",
   },
   slideCard: {
     borderRadius: 24,
@@ -259,7 +265,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    flex: 1,
   },
   slideEmoji: {
     fontSize: 52,
@@ -281,7 +286,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     marginTop: 20,
-    marginBottom: 8,
   },
   dot: {
     height: 8,
@@ -290,6 +294,23 @@ const styles = StyleSheet.create({
   loginSection: {
     gap: 16,
     marginTop: 24,
+    paddingHorizontal: 24,
+  },
+  primaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 16,
+  },
+  primaryBtnIcon: {
+    fontSize: 18,
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   googleBtn: {
     flexDirection: "row",

@@ -89,14 +89,14 @@ const MOTIVATIONAL_MESSAGES = [
 export default function HomeScreen() {
   const colors = useColors();
   const { isAuthenticated, loading: authLoading } = useAuth();
-  const { todayWatchMs, settings, streak, detoxActivities, sessions } = useAppContext();
+  const { todayWatchMs, settings, streak, detoxActivities, sessions, testMode } = useAppContext();
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
+    if (!authLoading && !isAuthenticated && !testMode) {
       router.replace("/login");
     }
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated, authLoading, testMode]);
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();

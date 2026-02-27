@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   type DetoxActivity,
   type Session,
@@ -17,6 +18,8 @@ import {
   saveStreak,
 } from "./store";
 
+const TEST_MODE_KEY = "@shorts_detox_test_mode";
+
 interface AppContextValue {
   sessions: Session[];
   detoxActivities: DetoxActivity[];
@@ -24,6 +27,8 @@ interface AppContextValue {
   streak: number;
   todayWatchMs: number;
   isLoading: boolean;
+  testMode: boolean;
+  setTestMode: (v: boolean) => void;
   addSessionRecord: (session: Session) => Promise<void>;
   addDetoxRecord: (activity: DetoxActivity) => Promise<void>;
   updateSettings: (partial: Partial<UserSettings>) => Promise<void>;
@@ -35,6 +40,20 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [detoxActivities, setDetoxActivities] = useState<DetoxActivity[]>([]);
+  const [testMode, setTestModeState] = useState(false);
+
+  // Load testMode from AsyncStorage on mount
+  useEffect(() => {
+    AsyncStorage.getItem(TEST_MODE_KEY).then((val) => {
+      if (val === "true") setTestModeState(true);
+    });
+  }, []);
+
+  // Persist testMode to AsyncStorage
+  const setTestMode = useCallback((v: boolean) => {
+    setTestModeState(v);
+    AsyncStorage.setItem(TEST_MODE_KEY, v ? "true" : "false");
+  }, []);
   const [settings, setSettings] = useState<UserSettings>({
     dailyGoalMinutes: 30,
     alertIntervalMinutes: 15,
@@ -121,6 +140,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         streak,
         todayWatchMs: todayStats.totalWatchMs,
         isLoading,
+        testMode,
+        setTestMode,
         addSessionRecord,
         addDetoxRecord,
         updateSettings,
