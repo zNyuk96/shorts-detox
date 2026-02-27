@@ -16,6 +16,7 @@ import {
 } from "react-native";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const TEST_MODE = true; // 테스트 모드: true면 소셜 로그인 비활성화
 
 const ONBOARDING_SLIDES = [
   {
@@ -40,6 +41,7 @@ export default function LoginScreen() {
   const { isAuthenticated, loading } = useAuth();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [testModeEnabled, setTestModeEnabled] = useState(TEST_MODE);
   const scrollRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -63,6 +65,11 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    if (testModeEnabled) {
+      // 테스트 모드: 로그인 없이 홈 화면으로 이동
+      router.replace("/(tabs)");
+      return;
+    }
     setIsLoggingIn(true);
     try {
       await startOAuthLogin();
@@ -71,6 +78,10 @@ export default function LoginScreen() {
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleToggleTestMode = () => {
+    setTestModeEnabled(!testModeEnabled);
   };
 
   if (loading) {
@@ -83,6 +94,16 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Test Mode Toggle */}
+      <Pressable
+        onPress={handleToggleTestMode}
+        style={({ pressed }) => [styles.testModeButton, { opacity: pressed ? 0.7 : 1 }]}
+      >
+        <Text style={[styles.testModeText, { color: colors.foreground }]}>
+          {testModeEnabled ? "🔧 TEST" : "🔒 PROD"}
+        </Text>
+      </Pressable>
+
       {/* Logo */}
       <Animated.View
         style={[styles.logoSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
@@ -150,16 +171,18 @@ export default function LoginScreen() {
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
             <>
-              <Text style={styles.googleIcon}>G</Text>
+              <Text style={styles.googleIcon}>{testModeEnabled ? "⚡" : "G"}</Text>
               <Text style={[styles.googleBtnText, { color: colors.foreground }]}>
-                Google로 계속하기
+                {testModeEnabled ? "테스트 모드로 시작" : "Google로 계속하기"}
               </Text>
             </>
           )}
         </Pressable>
 
         <Text style={[styles.terms, { color: colors.muted }]}>
-          계속 진행하면 서비스 이용약관 및 개인정보처리방침에 동의하는 것으로 간주됩니다.
+          {testModeEnabled
+            ? "🔧 테스트 모드: 로그인 없이 앱을 사용할 수 있습니다"
+            : "계속 진행하면 서비스 이용약관 및 개인정보처리방침에 동의하는 것으로 간주됩니다."}
         </Text>
       </Animated.View>
     </View>
@@ -177,6 +200,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
+  },
+  testModeButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    zIndex: 10,
+  },
+  testModeText: {
+    fontSize: 11,
+    fontWeight: "700",
   },
   logoSection: {
     alignItems: "center",
