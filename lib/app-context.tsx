@@ -26,6 +26,10 @@ import {
 } from "./store";
 import { permissionsService } from "./permissions-service";
 import { appTrackingService } from "./app-tracking-service";
+import { realAppDetectionService } from "./real-app-detection";
+import { backgroundTaskService } from "./background-task-service";
+import { scrollDetectionService } from "./scroll-detection-service";
+import { useNavigation } from "@react-navigation/native";
 
 const TEST_MODE_KEY = "@shorts_detox_test_mode";
 
@@ -136,23 +140,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refreshData();
   }, [refreshData]);
 
-  // Background permission request and app tracking initialization
+  // Real app detection and background monitoring
   useEffect(() => {
-    const initializeTracking = async () => {
+    const initializeDetection = async () => {
       try {
-        const hasPermissions = await permissionsService.ensureDetectionPermissions();
-        console.log("[AppContext] Permissions granted:", hasPermissions);
-        if (hasPermissions) {
-          await appTrackingService.start();
-          console.log("[AppContext] App tracking started");
-        }
+        await realAppDetectionService.start();
+        console.log("[AppContext] Real app detection started");
+        await backgroundTaskService.startMonitoring();
+        console.log("[AppContext] Background monitoring started");
       } catch (error) {
-        console.error("[AppContext] Error initializing tracking:", error);
+        console.error("[AppContext] Error initializing detection:", error);
       }
     };
-    initializeTracking();
+    initializeDetection();
     return () => {
-      appTrackingService.stop();
+      realAppDetectionService.stop();
+      backgroundTaskService.stopMonitoring();
     };
   }, []);
 

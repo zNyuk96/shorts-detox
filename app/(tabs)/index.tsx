@@ -4,6 +4,7 @@ import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
 import { notificationService } from "@/lib/notification-service";
 import { foregroundService } from "@/lib/foreground-service";
+import { scrollDetectionService } from "@/lib/scroll-detection-service";
 import { ScreenContainer } from "@/components/screen-container";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
@@ -148,6 +149,8 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={(event) => scrollDetectionService.handleScroll(event)}
+        scrollEventThrottle={100}
       >
         <Animated.View style={{ opacity: fadeAnim }}>
           {/* Header */}
