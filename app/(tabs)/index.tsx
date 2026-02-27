@@ -269,6 +269,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 24,
     alignItems: "center",
+    justifyContent: "center",
     gap: 12,
     borderWidth: 1,
   },
@@ -293,6 +294,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 14,
     alignItems: "center",
+    justifyContent: "center",
     gap: 4,
     borderWidth: 1,
   },
@@ -334,6 +336,7 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 6,
     justifyContent: "flex-end",
+    alignItems: "flex-start",
     minHeight: 140,
   },
   actionCardPrimary: {
