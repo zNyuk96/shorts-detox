@@ -1,7 +1,7 @@
 import { Platform, NativeModules, AppState, AppStateStatus } from "react-native";
 import { addSession, getTodayDateString } from "./store";
 
-const { AppDetector } = NativeModules;
+const { AppDetector, ScrollDataModule } = NativeModules;
 
 /**
  * 현재 실행 중인 앱 정보

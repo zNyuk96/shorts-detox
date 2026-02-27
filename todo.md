@@ -146,3 +146,12 @@
 - [x] 백그라운드 작업 등록 및 실시간 누적
 - [x] 임계값 초과 시 Recovery 페이지 강제 전환
 - [x] 통합 테스트 및 배포
+
+
+## Android Native 모듈 구현 (NEW)
+- [x] Android Native 모듈 프로젝트 설정
+- [x] UsageStatsManager를 이용한 포그라운드 앱 감지
+- [x] AccessibilityService를 이용한 스크롤 이벤트 감지
+- [x] React Native 브릿지 구현
+- [x] 백그라운드 서비스 등록 및 권한 설정
+- [x] 통합 테스트
