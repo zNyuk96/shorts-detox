@@ -35,6 +35,14 @@ const GAMES = [
     color: "#FF9F43",
     benefit: "처리 속도 개선",
   },
+  {
+    id: "learning",
+    title: "정보 학습",
+    desc: "유익한 정보를 읽고 객관식 문제를 풀어요",
+    emoji: "🎓",
+    color: "#00D4FF",
+    benefit: "비판적 사고력 강화",
+  },
 ];
 
 export default function BrainTabScreen() {
@@ -114,6 +122,11 @@ export default function BrainTabScreen() {
             <View style={styles.timeItem}>
               <Text style={[styles.timeValue, { color: colors.warning }]}>1분</Text>
               <Text style={[styles.timeLabel, { color: colors.muted }]}>반응속도</Text>
+            </View>
+            <View style={[styles.timeDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.timeItem}>
+              <Text style={[styles.timeValue, { color: "#00D4FF" }]}>5분</Text>
+              <Text style={[styles.timeLabel, { color: colors.muted }]}>학습</Text>
             </View>
           </View>
         </View>
