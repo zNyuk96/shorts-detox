@@ -1,48 +1,373 @@
-import { ScrollView, Text, View, TouchableOpacity } from "react-native";
-
+import { useAppContext } from "@/lib/app-context";
+import { formatDuration, formatMinutes, getTodayDateString } from "@/lib/store";
+import { useColors } from "@/hooks/use-colors";
+import { useAuth } from "@/hooks/use-auth";
 import { ScreenContainer } from "@/components/screen-container";
+import { router } from "expo-router";
+import { useEffect, useRef } from "react";
+import {
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import Svg, { Circle } from "react-native-svg";
 
-/**
- * Home Screen - NativeWind Example
- *
- * This template uses NativeWind (Tailwind CSS for React Native).
- * You can use familiar Tailwind classes directly in className props.
- *
- * Key patterns:
- * - Use `className` instead of `style` for most styling
- * - Theme colors: use tokens directly (bg-background, text-foreground, bg-primary, etc.); no dark: prefix needed
- * - Responsive: standard Tailwind breakpoints work on web
- * - Custom colors defined in tailwind.config.js
- */
-export default function HomeScreen() {
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+function CircularProgress({
+  progress,
+  size = 180,
+  strokeWidth = 14,
+  color,
+  bgColor,
+  children,
+}: {
+  progress: number; // 0-1
+  size?: number;
+  strokeWidth?: number;
+  color: string;
+  bgColor: string;
+  children?: React.ReactNode;
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const animValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(animValue, {
+      toValue: Math.min(progress, 1),
+      duration: 800,
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
+
+  const strokeDashoffset = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [circumference, 0],
+  });
+
   return (
-    <ScreenContainer className="p-6">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-        <View className="flex-1 gap-8">
-          {/* Hero Section */}
-          <View className="items-center gap-2">
-            <Text className="text-4xl font-bold text-foreground">Welcome</Text>
-            <Text className="text-base text-muted text-center">
-              Edit app/(tabs)/index.tsx to get started
+    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+      <Svg width={size} height={size} style={{ position: "absolute" }}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={bgColor}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+        <AnimatedCircle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+      <View style={{ alignItems: "center" }}>{children}</View>
+    </View>
+  );
+}
+
+const MOTIVATIONAL_MESSAGES = [
+  "오늘도 뇌를 깨워보세요! 🧠",
+  "숏츠보다 당신의 뇌가 더 흥미롭습니다 ✨",
+  "3분의 명상이 30분의 스크롤보다 낫습니다 🧘",
+  "지금 이 순간, 진짜 삶이 기다리고 있어요 🌱",
+  "스크롤을 멈추면 세상이 보입니다 👀",
+];
+
+export default function HomeScreen() {
+  const colors = useColors();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { todayWatchMs, settings, streak, detoxActivities, sessions } = useAppContext();
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.replace("/login");
+    }
+  }, [isAuthenticated, authLoading]);
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+  }, []);
+
+  const goalMs = settings.dailyGoalMinutes * 60 * 1000;
+  const progress = goalMs > 0 ? todayWatchMs / goalMs : 0;
+  const todayStr = getTodayDateString();
+  const todayDetox = detoxActivities.filter((a) => a.date === todayStr).length;
+  const todaySessions = sessions.filter((s) => s.date === todayStr).length;
+  const msgIndex = new Date().getDate() % MOTIVATIONAL_MESSAGES.length;
+  const progressColor = progress >= 1 ? colors.error : progress >= 0.7 ? colors.warning : colors.primary;
+
+  return (
+    <ScreenContainer>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View style={{ opacity: fadeAnim }}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={[styles.greeting, { color: colors.muted }]}>안녕하세요 👋</Text>
+              <Text style={[styles.title, { color: colors.foreground }]}>오늘의 현황</Text>
+            </View>
+            {streak > 0 && (
+              <View style={[styles.streakBadge, { backgroundColor: colors.warning + "22", borderColor: colors.warning + "44" }]}>
+                <Text style={styles.streakFire}>🔥</Text>
+                <Text style={[styles.streakText, { color: colors.warning }]}>{streak}일</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Circular Progress */}
+          <View style={[styles.progressCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <CircularProgress
+              progress={progress}
+              size={180}
+              strokeWidth={14}
+              color={progressColor}
+              bgColor={colors.border}
+            >
+              <Text style={[styles.progressTime, { color: colors.foreground }]}>
+                {formatDuration(todayWatchMs)}
+              </Text>
+              <Text style={[styles.progressLabel, { color: colors.muted }]}>
+                목표 {formatMinutes(settings.dailyGoalMinutes)}
+              </Text>
+            </CircularProgress>
+
+            <Text style={[styles.progressStatus, { color: progress >= 1 ? colors.error : colors.muted }]}>
+              {progress >= 1
+                ? "⚠️ 오늘 목표를 초과했어요"
+                : progress >= 0.7
+                ? `목표까지 ${formatDuration(goalMs - todayWatchMs)} 남았어요`
+                : "잘 하고 있어요! 계속 유지하세요"}
             </Text>
           </View>
 
-          {/* Example Card */}
-          <View className="w-full max-w-sm self-center bg-surface rounded-2xl p-6 shadow-sm border border-border">
-            <Text className="text-lg font-semibold text-foreground mb-2">NativeWind Ready</Text>
-            <Text className="text-sm text-muted leading-relaxed">
-              Use Tailwind CSS classes directly in your React Native components.
+          {/* Stats Row */}
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={styles.statEmoji}>📱</Text>
+              <Text style={[styles.statValue, { color: colors.foreground }]}>{todaySessions}</Text>
+              <Text style={[styles.statLabel, { color: colors.muted }]}>오늘 세션</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={styles.statEmoji}>🧠</Text>
+              <Text style={[styles.statValue, { color: colors.foreground }]}>{todayDetox}</Text>
+              <Text style={[styles.statLabel, { color: colors.muted }]}>디톡스 완료</Text>
+            </View>
+            <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={styles.statEmoji}>🔥</Text>
+              <Text style={[styles.statValue, { color: colors.foreground }]}>{streak}</Text>
+              <Text style={[styles.statLabel, { color: colors.muted }]}>연속 달성</Text>
+            </View>
+          </View>
+
+          {/* Motivational Message */}
+          <View style={[styles.messageCard, { backgroundColor: colors.primary + "15", borderColor: colors.primary + "30" }]}>
+            <Text style={[styles.messageText, { color: colors.primary }]}>
+              {MOTIVATIONAL_MESSAGES[msgIndex]}
             </Text>
           </View>
 
-          {/* Example Button */}
-          <View className="items-center">
-            <TouchableOpacity className="bg-primary px-6 py-3 rounded-full active:opacity-80">
-              <Text className="text-background font-semibold">Get Started</Text>
-            </TouchableOpacity>
+          {/* Quick Actions */}
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>빠른 시작</Text>
+          <View style={styles.actionsGrid}>
+            <Pressable
+              onPress={() => router.push("/detox" as any)}
+              style={({ pressed }) => [
+                styles.actionCard,
+                styles.actionCardPrimary,
+                { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
+              ]}
+            >
+              <Text style={styles.actionEmoji}>🛑</Text>
+              <Text style={[styles.actionTitle, { color: "#fff" }]}>지금 디톡스</Text>
+              <Text style={[styles.actionDesc, { color: "rgba(255,255,255,0.75)" }]}>숏츠 시청 중단하기</Text>
+            </Pressable>
+
+            <View style={styles.actionColumn}>
+              <Pressable
+                onPress={() => router.push("/(tabs)/brain" as any)}
+                style={({ pressed }) => [
+                  styles.actionCardSmall,
+                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.8 : 1 },
+                ]}
+              >
+                <Text style={styles.actionEmojiSmall}>🧠</Text>
+                <Text style={[styles.actionTitleSmall, { color: colors.foreground }]}>뇌 활동</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => router.push("/meditation" as any)}
+                style={({ pressed }) => [
+                  styles.actionCardSmall,
+                  { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.8 : 1 },
+                ]}
+              >
+                <Text style={styles.actionEmojiSmall}>🧘</Text>
+                <Text style={[styles.actionTitleSmall, { color: colors.foreground }]}>명상</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  greeting: {
+    fontSize: 14,
+    marginBottom: 2,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+  },
+  streakBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  streakFire: {
+    fontSize: 16,
+  },
+  streakText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  progressCard: {
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+  },
+  progressTime: {
+    fontSize: 24,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+  },
+  progressLabel: {
+    fontSize: 13,
+  },
+  progressStatus: {
+    fontSize: 14,
+    textAlign: "center",
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 14,
+    alignItems: "center",
+    gap: 4,
+    borderWidth: 1,
+  },
+  statEmoji: {
+    fontSize: 22,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  statLabel: {
+    fontSize: 11,
+    textAlign: "center",
+  },
+  messageCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+  },
+  messageText: {
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: -0.3,
+    marginBottom: -4,
+  },
+  actionsGrid: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  actionCard: {
+    flex: 1,
+    borderRadius: 20,
+    padding: 20,
+    gap: 6,
+    justifyContent: "flex-end",
+    minHeight: 140,
+  },
+  actionCardPrimary: {
+    flex: 1.2,
+  },
+  actionEmoji: {
+    fontSize: 32,
+    marginBottom: 4,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  actionDesc: {
+    fontSize: 12,
+  },
+  actionColumn: {
+    flex: 0.8,
+    gap: 12,
+  },
+  actionCardSmall: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1,
+  },
+  actionEmojiSmall: {
+    fontSize: 24,
+  },
+  actionTitleSmall: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+});

@@ -9,21 +9,46 @@ type IconMapping = Record<SymbolViewProps["name"], ComponentProps<typeof Materia
 type IconSymbolName = keyof typeof MAPPING;
 
 /**
- * Add your SF Symbols to Material Icons mappings here.
- * - see Material Icons in the [Icons Directory](https://icons.expo.fyi).
- * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
+ * SF Symbols → Material Icons mapping for Shorts Detox app.
  */
 const MAPPING = {
+  // Navigation
   "house.fill": "home",
+  "timer": "timer",
+  "brain.head.profile": "psychology",
+  "chart.bar.fill": "bar-chart",
+  "gearshape.fill": "settings",
+  // General
   "paperplane.fill": "send",
   "chevron.left.forwardslash.chevron.right": "code",
   "chevron.right": "chevron-right",
+  "chevron.left": "chevron-left",
+  "xmark": "close",
+  "xmark.circle.fill": "cancel",
+  "checkmark.circle.fill": "check-circle",
+  "play.fill": "play-arrow",
+  "pause.fill": "pause",
+  "stop.fill": "stop",
+  "arrow.clockwise": "refresh",
+  "plus": "add",
+  "minus": "remove",
+  "bell.fill": "notifications",
+  "bell.slash.fill": "notifications-off",
+  "moon.fill": "dark-mode",
+  "sun.max.fill": "light-mode",
+  "person.fill": "person",
+  "star.fill": "star",
+  "flame.fill": "local-fire-department",
+  "trophy.fill": "emoji-events",
+  "bolt.fill": "bolt",
+  "heart.fill": "favorite",
+  "info.circle": "info",
+  "arrow.right": "arrow-forward",
+  "target": "my-location",
 } as IconMapping;
 
 /**
  * An icon component that uses native SF Symbols on iOS, and Material Icons on Android and web.
- * This ensures a consistent look across platforms, and optimal resource usage.
- * Icon `name`s are based on SF Symbols and require manual mapping to Material Icons.
  */
 export function IconSymbol({
   name,
