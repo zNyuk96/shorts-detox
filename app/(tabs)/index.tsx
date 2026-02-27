@@ -2,6 +2,7 @@ import { useAppContext } from "@/lib/app-context";
 import { formatDuration, formatMinutes, getTodayDateString } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
+import { notificationService } from "@/lib/notification-service";
 import { ScreenContainer } from "@/components/screen-container";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
@@ -101,6 +102,24 @@ export default function HomeScreen() {
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
+
+  // 알람 체크
+  useEffect(() => {
+    const checkAlerts = async () => {
+      const thresholdMinutes = settings.alertThresholdMinutes || 30;
+      const watchMinutes = Math.floor(todayWatchMs / 60000);
+      
+      if (watchMinutes >= thresholdMinutes) {
+        await notificationService.checkAndSendAlert(todayWatchMs, thresholdMinutes);
+      }
+    };
+    
+    checkAlerts();
+    
+    // 1분마다 알람 체크
+    const interval = setInterval(checkAlerts, 60000);
+    return () => clearInterval(interval);
+  }, [todayWatchMs, settings.alertThresholdMinutes]);
 
   const goalMs = settings.dailyGoalMinutes * 60 * 1000;
   const progress = goalMs > 0 ? todayWatchMs / goalMs : 0;

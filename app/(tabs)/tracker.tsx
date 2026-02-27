@@ -2,13 +2,14 @@ import { useAppContext } from "@/lib/app-context";
 import { useColors } from "@/hooks/use-colors";
 import { ScreenContainer } from "@/components/screen-container";
 import { type Platform, formatDuration, generateId, getTodayDateString } from "@/lib/store";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   FlatList,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
@@ -21,7 +22,7 @@ const PLATFORMS: { id: Platform; label: string; emoji: string; color: string }[]
   { id: "other", label: "기타", emoji: "📱", color: "#7B7B9A" },
 ];
 
-const ALERT_INTERVALS = [5, 10, 15, 20, 30];
+const QUICK_DURATIONS = [5, 10, 15, 20, 30]; // 분 단위
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -36,18 +37,11 @@ export default function TrackerScreen() {
   const colors = useColors();
   const { sessions, settings, addSessionRecord, updateSettings } = useAppContext();
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>("youtube");
-  const [isTracking, setIsTracking] = useState(false);
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const startTimeRef = useRef<number>(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const notifIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [manualMinutes, setManualMinutes] = useState("");
+  const [alertThresholdInput, setAlertThresholdInput] = useState(String(settings.alertThresholdMinutes || 30));
 
   useEffect(() => {
     requestNotificationPermission();
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (notifIntervalRef.current) clearInterval(notifIntervalRef.current);
-    };
   }, []);
 
   const requestNotificationPermission = async () => {
@@ -57,73 +51,58 @@ export default function TrackerScreen() {
     }
   };
 
-  const scheduleAlertNotification = (intervalMinutes: number) => {
-    if (notifIntervalRef.current) clearInterval(notifIntervalRef.current);
-    notifIntervalRef.current = setInterval(async () => {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: "🛑 숏츠 디톡스 알림",
-          body: `${intervalMinutes}분째 시청 중입니다. 잠깐 쉬어가세요!`,
-          sound: true,
-        },
-        trigger: null,
-      });
-    }, intervalMinutes * 60 * 1000);
-  };
-
-  const startTracking = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    startTimeRef.current = Date.now();
-    setElapsedMs(0);
-    setIsTracking(true);
-
-    intervalRef.current = setInterval(() => {
-      setElapsedMs(Date.now() - startTimeRef.current);
-    }, 1000);
-
-    if (settings.alertEnabled) {
-      scheduleAlertNotification(settings.alertIntervalMinutes);
+  const addManualSession = async (durationMinutes: number) => {
+    if (durationMinutes <= 0) {
+      Alert.alert("오류", "0분 이상의 시간을 입력해주세요");
+      return;
     }
-  };
 
-  const stopTracking = async () => {
-    if (!isTracking) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    if (notifIntervalRef.current) clearInterval(notifIntervalRef.current);
+    const now = Date.now();
+    const durationMs = durationMinutes * 60 * 1000;
+    const session = {
+      id: generateId(),
+      platform: selectedPlatform,
+      startTime: now - durationMs,
+      endTime: now,
+      durationMs,
+      date: getTodayDateString(),
+      isAutoDetected: false,
+    };
 
-    const endTime = Date.now();
-    const duration = endTime - startTimeRef.current;
-    setIsTracking(false);
+    await addSessionRecord(session);
+    setManualMinutes("");
 
-    if (duration > 5000) {
-      const session = {
-        id: generateId(),
-        platform: selectedPlatform,
-        startTime: startTimeRef.current,
-        endTime,
-        durationMs: duration,
-        date: getTodayDateString(),
-      };
-      await addSessionRecord(session);
-    }
-    setElapsedMs(0);
+    Alert.alert("성공", `${durationMinutes}분 시청 기록이 저장되었습니다`);
   };
 
-  const toggleTracking = () => {
-    if (isTracking) {
-      stopTracking();
-    } else {
-      startTracking();
-    }
+  const addQuickDuration = (minutes: number) => {
+    addManualSession(minutes);
   };
 
-  const toggleAlertInterval = (minutes: number) => {
-    updateSettings({ alertIntervalMinutes: minutes });
+  const handleManualInput = () => {
+    const minutes = parseInt(manualMinutes, 10);
+    if (isNaN(minutes)) {
+      Alert.alert("오류", "숫자를 입력해주세요");
+      return;
+    }
+    addManualSession(minutes);
+  };
+
+  const updateAlertThreshold = () => {
+    const threshold = parseInt(alertThresholdInput, 10);
+    if (isNaN(threshold) || threshold <= 0) {
+      Alert.alert("오류", "0분 이상의 숫자를 입력해주세요");
+      return;
+    }
+    updateSettings({ alertThresholdMinutes: threshold });
+    Alert.alert("성공", `알람 임계값이 ${threshold}분으로 설정되었습니다`);
   };
 
   const todaySessions = sessions.filter((s) => s.date === getTodayDateString());
+  const totalTodayMs = todaySessions.reduce((sum, s) => sum + s.durationMs, 0);
+  const totalTodayMinutes = Math.floor(totalTodayMs / 60000);
 
   return (
     <ScreenContainer>
@@ -135,8 +114,25 @@ export default function TrackerScreen() {
           <View style={styles.headerContent}>
             <Text style={[styles.pageTitle, { color: colors.foreground }]}>숏츠 추적</Text>
             <Text style={[styles.pageSubtitle, { color: colors.muted }]}>
-              시청 시작 시 타이머를 눌러주세요
+              시청 시간을 수동으로 기록하세요
             </Text>
+
+            {/* Today Stats */}
+            <View style={[styles.statsCard, { backgroundColor: colors.primary + "15", borderColor: colors.primary }]}>
+              <View style={styles.statItem}>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>오늘 총 시청</Text>
+                <Text style={[styles.statValue, { color: colors.primary }]}>
+                  {formatDuration(totalTodayMs)}
+                </Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>세션 수</Text>
+                <Text style={[styles.statValue, { color: colors.primary }]}>
+                  {todaySessions.length}
+                </Text>
+              </View>
+            </View>
 
             {/* Platform Selector */}
             <View style={styles.platformGrid}>
@@ -144,10 +140,8 @@ export default function TrackerScreen() {
                 <Pressable
                   key={p.id}
                   onPress={() => {
-                    if (!isTracking) {
-                      setSelectedPlatform(p.id);
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    }
+                    setSelectedPlatform(p.id);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
                   style={({ pressed }) => [
                     styles.platformBtn,
@@ -174,90 +168,100 @@ export default function TrackerScreen() {
               ))}
             </View>
 
-            {/* Timer */}
-            <View
-              style={[
-                styles.timerCard,
-                {
-                  backgroundColor: isTracking ? colors.primary + "12" : colors.surface,
-                  borderColor: isTracking ? colors.primary : colors.border,
-                },
-              ]}
-            >
-              <Text style={[styles.timerDisplay, { color: isTracking ? colors.primary : colors.foreground }]}>
-                {formatDuration(elapsedMs)}
-              </Text>
-              {isTracking && (
-                <View style={styles.liveIndicator}>
-                  <View style={[styles.liveDot, { backgroundColor: colors.error }]} />
-                  <Text style={[styles.liveText, { color: colors.error }]}>LIVE</Text>
-                </View>
-              )}
+            {/* Quick Duration Buttons */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, { color: colors.foreground }]}>⚡ 빠른 기록</Text>
+              <View style={styles.quickButtonsRow}>
+                {QUICK_DURATIONS.map((min) => (
+                  <Pressable
+                    key={min}
+                    onPress={() => addQuickDuration(min)}
+                    style={({ pressed }) => [
+                      styles.quickBtn,
+                      {
+                        backgroundColor: colors.primary,
+                        opacity: pressed ? 0.8 : 1,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.quickBtnText}>{min}분</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
 
-            {/* Start/Stop Button */}
-            <Pressable
-              onPress={toggleTracking}
-              style={({ pressed }) => [
-                styles.mainBtn,
-                {
-                  backgroundColor: isTracking ? colors.error : colors.primary,
-                  transform: [{ scale: pressed ? 0.97 : 1 }],
-                },
-              ]}
-            >
-              <Text style={styles.mainBtnText}>
-                {isTracking ? "⏹ 시청 종료" : "▶ 시청 시작"}
-              </Text>
-            </Pressable>
+            {/* Manual Input */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionLabel, { color: colors.foreground }]}>📝 직접 입력</Text>
+              <View style={styles.manualInputRow}>
+                <TextInput
+                  style={[
+                    styles.manualInput,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                      color: colors.foreground,
+                    },
+                  ]}
+                  placeholder="분 수 입력"
+                  placeholderTextColor={colors.muted}
+                  value={manualMinutes}
+                  onChangeText={setManualMinutes}
+                  keyboardType="number-pad"
+                  returnKeyType="done"
+                  onSubmitEditing={handleManualInput}
+                />
+                <Pressable
+                  onPress={handleManualInput}
+                  style={({ pressed }) => [
+                    styles.submitBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      opacity: pressed ? 0.8 : 1,
+                    },
+                  ]}
+                >
+                  <Text style={styles.submitBtnText}>저장</Text>
+                </Pressable>
+              </View>
+            </View>
 
             {/* Alert Settings */}
             <View style={[styles.alertSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.alertHeader}>
-                <Text style={[styles.alertTitle, { color: colors.foreground }]}>⏰ 알림 간격</Text>
-                <Pressable
-                  onPress={() => updateSettings({ alertEnabled: !settings.alertEnabled })}
+                <Text style={[styles.alertTitle, { color: colors.foreground }]}>🔔 알람 임계값</Text>
+              </View>
+              <Text style={[styles.alertDescription, { color: colors.muted }]}>
+                이 시간 이상 시청하면 알람을 받습니다
+              </Text>
+              <View style={styles.thresholdRow}>
+                <TextInput
                   style={[
-                    styles.toggleBtn,
-                    { backgroundColor: settings.alertEnabled ? colors.primary : colors.border },
+                    styles.thresholdInput,
+                    {
+                      backgroundColor: colors.background,
+                      borderColor: colors.border,
+                      color: colors.foreground,
+                    },
+                  ]}
+                  placeholder="분 수"
+                  placeholderTextColor={colors.muted}
+                  value={alertThresholdInput}
+                  onChangeText={setAlertThresholdInput}
+                  keyboardType="number-pad"
+                />
+                <Pressable
+                  onPress={updateAlertThreshold}
+                  style={({ pressed }) => [
+                    styles.updateBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      opacity: pressed ? 0.8 : 1,
+                    },
                   ]}
                 >
-                  <View
-                    style={[
-                      styles.toggleThumb,
-                      { transform: [{ translateX: settings.alertEnabled ? 18 : 2 }] },
-                    ]}
-                  />
+                  <Text style={styles.updateBtnText}>설정</Text>
                 </Pressable>
-              </View>
-              <View style={styles.intervalRow}>
-                {ALERT_INTERVALS.map((min) => (
-                  <Pressable
-                    key={min}
-                    onPress={() => toggleAlertInterval(min)}
-                    style={[
-                      styles.intervalBtn,
-                      {
-                        backgroundColor:
-                          settings.alertIntervalMinutes === min ? colors.primary : colors.background,
-                        borderColor:
-                          settings.alertIntervalMinutes === min ? colors.primary : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.intervalText,
-                        {
-                          color:
-                            settings.alertIntervalMinutes === min ? "#fff" : colors.muted,
-                        },
-                      ]}
-                    >
-                      {min}분
-                    </Text>
-                  </Pressable>
-                ))}
               </View>
             </View>
 
@@ -287,9 +291,14 @@ export default function TrackerScreen() {
                   })}
                 </Text>
               </View>
-              <Text style={[styles.sessionDuration, { color: colors.primary }]}>
-                {formatDuration(item.durationMs)}
-              </Text>
+              <View style={styles.sessionRight}>
+                <Text style={[styles.sessionDuration, { color: colors.primary }]}>
+                  {formatDuration(item.durationMs)}
+                </Text>
+                {item.isAutoDetected && (
+                  <Text style={[styles.autoTag, { color: colors.warning }]}>자동</Text>
+                )}
+              </View>
             </View>
           );
         }}
@@ -297,7 +306,7 @@ export default function TrackerScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>📱</Text>
             <Text style={[styles.emptyText, { color: colors.muted }]}>
-              아직 오늘의 세션이 없어요{"\n"}시청 시작 버튼을 눌러보세요
+              아직 오늘의 세션이 없어요{"\n"}시청 시간을 기록해보세요
             </Text>
           </View>
         }
@@ -324,6 +333,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: -8,
   },
+  statsCard: {
+    flexDirection: "row",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    gap: 16,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: "rgba(0,0,0,0.1)",
+  },
   platformGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -348,42 +381,50 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
   },
-  timerCard: {
-    borderRadius: 20,
-    padding: 28,
-    alignItems: "center",
-    borderWidth: 1.5,
+  section: {
     gap: 8,
   },
-  timerDisplay: {
-    fontSize: 48,
+  sectionLabel: {
+    fontSize: 15,
     fontWeight: "700",
-    letterSpacing: -1,
-    fontVariant: ["tabular-nums"],
   },
-  liveIndicator: {
+  quickButtonsRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  liveText: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  mainBtn: {
-    paddingVertical: 18,
-    borderRadius: 18,
+  quickBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
     alignItems: "center",
   },
-  mainBtnText: {
+  quickBtnText: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  manualInputRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  manualInput: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  submitBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    justifyContent: "center",
+  },
+  submitBtnText: {
+    color: "#fff",
+    fontSize: 14,
     fontWeight: "700",
   },
   alertSection: {
@@ -401,32 +442,32 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
   },
-  toggleBtn: {
-    width: 44,
-    height: 26,
-    borderRadius: 13,
-    justifyContent: "center",
+  alertDescription: {
+    fontSize: 13,
   },
-  toggleThumb: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#fff",
-  },
-  intervalRow: {
+  thresholdRow: {
     flexDirection: "row",
     gap: 8,
   },
-  intervalBtn: {
+  thresholdInput: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: "center",
-    borderWidth: 1,
-  },
-  intervalText: {
-    fontSize: 13,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
     fontWeight: "600",
+  },
+  updateBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    justifyContent: "center",
+  },
+  updateBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
   },
   sectionTitle: {
     fontSize: 18,
@@ -458,9 +499,17 @@ const styles = StyleSheet.create({
   sessionTime: {
     fontSize: 13,
   },
+  sessionRight: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
   sessionDuration: {
     fontSize: 15,
     fontWeight: "700",
+  },
+  autoTag: {
+    fontSize: 11,
+    fontWeight: "600",
   },
   emptyState: {
     alignItems: "center",

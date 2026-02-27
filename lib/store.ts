@@ -11,6 +11,8 @@ export interface Session {
   endTime: number;
   durationMs: number;
   date: string; // YYYY-MM-DD
+  scrollFrequency?: number; // 초당 스크롤 횟수
+  isAutoDetected?: boolean; // 자동 감지 여부
 }
 
 export interface DetoxActivity {
@@ -37,6 +39,8 @@ export interface UserSettings {
   alertEnabled: boolean;
   theme: "light" | "dark" | "system";
   onboardingDone: boolean;
+  alertThresholdMinutes?: number; // 알람 임계값 (분)
+  manualInputEnabled?: boolean; // 수동 입력 활성화
 }
 
 export interface AppState {
@@ -55,6 +59,8 @@ const DEFAULT_SETTINGS: UserSettings = {
   alertEnabled: true,
   theme: "system",
   onboardingDone: false,
+  alertThresholdMinutes: 30,
+  manualInputEnabled: true,
 };
 
 const STORAGE_KEYS = {
@@ -63,6 +69,8 @@ const STORAGE_KEYS = {
   SETTINGS: "@shorts_detox/settings",
   STREAK: "@shorts_detox/streak",
   LAST_ACTIVE: "@shorts_detox/last_active",
+  SCROLL_METRICS: "@shorts_detox/scroll_metrics",
+  ATTENTION_SCORES: "@shorts_detox/attention_scores",
 };
 
 // ─── Storage Helpers ──────────────────────────────────────────────────────────
@@ -199,4 +207,156 @@ export function formatMinutes(minutes: number): string {
 
 export function generateId(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// ─── Scroll Metrics & Attention Scores ─────────────────────────────────────
+
+export interface ScrollMetrics {
+  date: string;
+  platform: Platform;
+  averageScrollFrequency: number; // 초당 스크롤 횟수
+  totalScrollCount: number;
+  sessionCount: number;
+}
+
+export interface AttentionScore {
+  date: string;
+  watchTimeMinutes: number;
+  scrollFrequency: number; // 평균 초당 스크롤
+  attentionScore: number; // 0-100 (높을수록 좋음)
+  focusLevel: "excellent" | "good" | "fair" | "poor"; // 주의력 수준
+  recommendation: string; // 권장사항
+}
+
+// ─── Scroll Metrics Storage ───────────────────────────────────────────────
+
+export async function loadScrollMetrics(): Promise<ScrollMetrics[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.SCROLL_METRICS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveScrollMetrics(metrics: ScrollMetrics[]): Promise<void> {
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const cutoffDate = new Date(cutoff).toISOString().split("T")[0];
+  const filtered = metrics.filter((m) => m.date >= cutoffDate);
+  await AsyncStorage.setItem(STORAGE_KEYS.SCROLL_METRICS, JSON.stringify(filtered));
+}
+
+export async function addScrollMetric(metric: ScrollMetrics): Promise<void> {
+  const metrics = await loadScrollMetrics();
+  const existing = metrics.findIndex((m) => m.date === metric.date && m.platform === metric.platform);
+  if (existing >= 0) {
+    metrics[existing] = metric;
+  } else {
+    metrics.push(metric);
+  }
+  await saveScrollMetrics(metrics);
+}
+
+// ─── Attention Scores Storage ─────────────────────────────────────────────
+
+export async function loadAttentionScores(): Promise<AttentionScore[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.ATTENTION_SCORES);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveAttentionScores(scores: AttentionScore[]): Promise<void> {
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  const cutoffDate = new Date(cutoff).toISOString().split("T")[0];
+  const filtered = scores.filter((s) => s.date >= cutoffDate);
+  await AsyncStorage.setItem(STORAGE_KEYS.ATTENTION_SCORES, JSON.stringify(filtered));
+}
+
+export async function addAttentionScore(score: AttentionScore): Promise<void> {
+  const scores = await loadAttentionScores();
+  const existing = scores.findIndex((s) => s.date === score.date);
+  if (existing >= 0) {
+    scores[existing] = score;
+  } else {
+    scores.push(score);
+  }
+  await saveAttentionScores(scores);
+}
+
+// ─── Attention Score Calculation ──────────────────────────────────────────
+
+export function calculateAttentionScore(watchTimeMinutes: number, avgScrollFrequency: number): AttentionScore {
+  // 시청 시간에 따른 점수 (30분 이상이면 감점)
+  let watchScore = Math.max(0, 100 - (watchTimeMinutes / 30) * 50);
+  
+  // 스크롤 주기에 따른 점수 (초당 1회 이상이면 감점)
+  let scrollScore = Math.max(0, 100 - avgScrollFrequency * 30);
+  
+  // 최종 주의력 점수 (평균)
+  const attentionScore = Math.round((watchScore + scrollScore) / 2);
+  
+  // 주의력 수준 판정
+  let focusLevel: "excellent" | "good" | "fair" | "poor";
+  let recommendation: string;
+  
+  if (attentionScore >= 80) {
+    focusLevel = "excellent";
+    recommendation = "매우 좋습니다! 현재 주의력 수준이 우수합니다.";
+  } else if (attentionScore >= 60) {
+    focusLevel = "good";
+    recommendation = "좋습니다. 조금 더 시청 시간을 줄여보세요.";
+  } else if (attentionScore >= 40) {
+    focusLevel = "fair";
+    recommendation = "주의력이 저하되고 있습니다. 휴식을 취해보세요.";
+  } else {
+    focusLevel = "poor";
+    recommendation = "주의력이 심각하게 손상되었습니다. 즉시 휴식이 필요합니다.";
+  }
+  
+  return {
+    date: getTodayDateString(),
+    watchTimeMinutes,
+    scrollFrequency: avgScrollFrequency,
+    attentionScore,
+    focusLevel,
+    recommendation,
+  };
+}
+
+// ─── App-specific Stats ───────────────────────────────────────────────────
+
+export function getAppStats(sessions: Session[], platform: Platform, date: string): { totalMs: number; sessionCount: number; avgScrollFrequency: number } {
+  const filtered = sessions.filter((s) => s.date === date && s.platform === platform);
+  const totalMs = filtered.reduce((sum, s) => sum + s.durationMs, 0);
+  const avgScrollFrequency = filtered.length > 0 ? filtered.reduce((sum, s) => sum + (s.scrollFrequency || 0), 0) / filtered.length : 0;
+  return {
+    totalMs,
+    sessionCount: filtered.length,
+    avgScrollFrequency,
+  };
+}
+
+// ─── Platform-specific Daily Stats ────────────────────────────────────────
+
+export function getPlatformStats(sessions: Session[], date: string): Record<Platform, { totalMs: number; sessionCount: number }> {
+  const platforms: Platform[] = ["youtube", "tiktok", "instagram", "other"];
+  const stats: Record<Platform, { totalMs: number; sessionCount: number }> = {
+    youtube: { totalMs: 0, sessionCount: 0 },
+    tiktok: { totalMs: 0, sessionCount: 0 },
+    instagram: { totalMs: 0, sessionCount: 0 },
+    other: { totalMs: 0, sessionCount: 0 },
+  };
+  
+  for (const platform of platforms) {
+    const result = getAppStats(sessions, platform, date);
+    stats[platform] = {
+      totalMs: result.totalMs,
+      sessionCount: result.sessionCount,
+    };
+  }
+  
+  return stats;
 }

@@ -4,6 +4,8 @@ import {
   type DetoxActivity,
   type Session,
   type UserSettings,
+  type AttentionScore,
+  type ScrollMetrics,
   addDetoxActivity,
   addSession,
   getDailyStats,
@@ -16,6 +18,12 @@ import {
   saveLastActiveDate,
   saveSettings,
   saveStreak,
+  loadAttentionScores,
+  addAttentionScore,
+  loadScrollMetrics,
+  addScrollMetric,
+  calculateAttentionScore,
+  getPlatformStats,
 } from "./store";
 
 const TEST_MODE_KEY = "@shorts_detox_test_mode";
@@ -33,6 +41,10 @@ interface AppContextValue {
   addDetoxRecord: (activity: DetoxActivity) => Promise<void>;
   updateSettings: (partial: Partial<UserSettings>) => Promise<void>;
   refreshData: () => Promise<void>;
+  attentionScores: AttentionScore[];
+  scrollMetrics: ScrollMetrics[];
+  platformStats: Record<string, { totalMs: number; sessionCount: number }>;
+  todayAttentionScore: AttentionScore | null;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -41,6 +53,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [detoxActivities, setDetoxActivities] = useState<DetoxActivity[]>([]);
   const [testMode, setTestModeState] = useState(false);
+  const [attentionScores, setAttentionScores] = useState<AttentionScore[]>([]);
+  const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics[]>([]);
+  const [platformStats, setPlatformStats] = useState<Record<string, { totalMs: number; sessionCount: number }>>({});
+  const [todayAttentionScore, setTodayAttentionScore] = useState<AttentionScore | null>(null);
 
   // Load testMode from AsyncStorage on mount
   useEffect(() => {
@@ -54,23 +70,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setTestModeState(v);
     AsyncStorage.setItem(TEST_MODE_KEY, v ? "true" : "false");
   }, []);
+
   const [settings, setSettings] = useState<UserSettings>({
     dailyGoalMinutes: 30,
     alertIntervalMinutes: 15,
     alertEnabled: true,
     theme: "system",
     onboardingDone: false,
+    alertThresholdMinutes: 30,
+    manualInputEnabled: true,
   });
   const [streak, setStreak] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshData = useCallback(async () => {
-    const [s, d, cfg, str, lastDate] = await Promise.all([
+    const [s, d, cfg, str, lastDate, scores, metrics] = await Promise.all([
       loadSessions(),
       loadDetoxActivities(),
       loadSettings(),
       loadStreak(),
       loadLastActiveDate(),
+      loadAttentionScores(),
+      loadScrollMetrics(),
     ]);
 
     // Update streak
@@ -96,6 +117,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setDetoxActivities(d);
     setSettings(cfg);
     setStreak(newStreak);
+    setAttentionScores(scores);
+    setScrollMetrics(metrics);
+
+    // 오늘의 플랫폼별 통계 계산
+    const stats = getPlatformStats(s, today);
+    setPlatformStats(stats);
+
+    // 오늘의 주의력 점수 찾기
+    const todayScore = scores.find((s) => s.date === today) || null;
+    setTodayAttentionScore(todayScore);
+
     setIsLoading(false);
   }, []);
 
@@ -146,6 +178,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addDetoxRecord,
         updateSettings,
         refreshData,
+        attentionScores,
+        scrollMetrics,
+        platformStats,
+        todayAttentionScore,
       }}
     >
       {children}

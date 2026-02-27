@@ -1,8 +1,8 @@
-import { Platform } from "react-native";
 import type { IDetectionService, DetectionSession, DetectionConfig } from "./auto-detection-types";
 import { androidDetectionService } from "./detection-android";
 import { iosDetectionService } from "./detection-ios";
-import { addSession, getTodayDateString } from "./store";
+import { addSession, getTodayDateString, addScrollMetric, addAttentionScore, calculateAttentionScore } from "./store";
+import { Platform } from "react-native";
 
 /**
  * 통합 감지 서비스
@@ -109,22 +109,60 @@ class DetectionServiceManager {
     }
 
     try {
+      const platform = this.mapAppIdToPlatform(session.appId);
+      const scrollFrequency = session.scrollCount ? session.scrollCount / (session.accumulatedMs / 1000) : 0;
+
       await addSession({
         id: session.id,
-        platform: this.mapAppIdToPlatform(session.appId),
+        platform,
         startTime: session.startTime,
         endTime: session.endTime ?? Date.now(),
         durationMs: session.accumulatedMs,
         date: getTodayDateString(),
+        scrollFrequency,
+        isAutoDetected: true,
+      });
+
+      // 스크롤 메트릭 저장
+      await addScrollMetric({
+        date: getTodayDateString(),
+        platform,
+        averageScrollFrequency: scrollFrequency,
+        totalScrollCount: session.scrollCount || 0,
+        sessionCount: 1,
       });
 
       console.log(
         "[DetectionServiceManager] Session saved:",
         session.id,
-        `(${session.accumulatedMs}ms)`
+        `(${session.accumulatedMs}ms, scrollFreq: ${scrollFrequency.toFixed(2)})`
       );
     } catch (error) {
       console.error("[DetectionServiceManager] Failed to save session:", error);
+    }
+  }
+
+  /**
+   * 주의력 점수 업데이트
+   */
+  async updateAttentionScore(sessions: any[]): Promise<void> {
+    try {
+      const today = getTodayDateString();
+      const todaySessions = sessions.filter((s) => s.date === today);
+
+      const totalWatchMs = todaySessions.reduce((sum, s) => sum + s.durationMs, 0);
+      const totalWatchMinutes = Math.floor(totalWatchMs / 60000);
+
+      const avgScrollFrequency = todaySessions.length > 0
+        ? todaySessions.reduce((sum, s) => sum + (s.scrollFrequency || 0), 0) / todaySessions.length
+        : 0;
+
+      const score = calculateAttentionScore(totalWatchMinutes, avgScrollFrequency);
+      await addAttentionScore(score);
+
+      console.log("[DetectionServiceManager] Attention score updated:", score.attentionScore);
+    } catch (error) {
+      console.error("[DetectionServiceManager] Failed to update attention score:", error);
     }
   }
 

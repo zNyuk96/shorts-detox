@@ -1,14 +1,20 @@
 import { useAppContext } from "@/lib/app-context";
 import { useColors } from "@/hooks/use-colors";
 import { ScreenContainer } from "@/components/screen-container";
-import { formatDuration, getWeeklyStats } from "@/lib/store";
+import { formatDuration, getWeeklyStats, getTodayDateString, getPlatformStats } from "@/lib/store";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 const DAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+const PLATFORMS = [
+  { id: "youtube", label: "YouTube", emoji: "▶️", color: "#FF0000" },
+  { id: "tiktok", label: "TikTok", emoji: "🎵", color: "#010101" },
+  { id: "instagram", label: "Instagram", emoji: "📸", color: "#E1306C" },
+  { id: "other", label: "기타", emoji: "📱", color: "#7B7B9A" },
+];
 
 export default function StatsScreen() {
   const colors = useColors();
-  const { sessions, detoxActivities } = useAppContext();
+  const { sessions, detoxActivities, platformStats, todayAttentionScore } = useAppContext();
   const weeklyStats = getWeeklyStats(sessions);
 
   const maxMs = Math.max(...weeklyStats.map((s) => s.totalWatchMs), 1);
@@ -17,8 +23,18 @@ export default function StatsScreen() {
   const brainGames = detoxActivities.filter((a) => a.type === "brain").length;
   const meditations = detoxActivities.filter((a) => a.type === "meditation").length;
 
-  const today = new Date();
-  const todayDayIndex = today.getDay();
+  const today = getTodayDateString();
+  const todayStats = platformStats;
+
+  // 앱별 시청 시간 계산
+  const appStats = [
+    { ...PLATFORMS[0], watchMs: todayStats.youtube?.totalMs || 0 },
+    { ...PLATFORMS[1], watchMs: todayStats.tiktok?.totalMs || 0 },
+    { ...PLATFORMS[2], watchMs: todayStats.instagram?.totalMs || 0 },
+    { ...PLATFORMS[3], watchMs: todayStats.other?.totalMs || 0 },
+  ].filter((s) => s.watchMs > 0);
+
+  const totalTodayMs = Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0);
 
   return (
     <ScreenContainer>
@@ -71,6 +87,137 @@ export default function StatsScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Today's App Breakdown */}
+        {appStats.length > 0 && (
+          <View style={[styles.appBreakdownCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.cardTitle, { color: colors.foreground }]}>📊 오늘 앱별 시청 시간</Text>
+            <View style={styles.appStatsContainer}>
+              {appStats.map((app) => {
+                const percentage = totalTodayMs > 0 ? (app.watchMs / totalTodayMs) * 100 : 0;
+                return (
+                  <View key={app.id} style={styles.appStatItem}>
+                    <View style={styles.appStatHeader}>
+                      <Text style={styles.appEmoji}>{app.emoji}</Text>
+                      <Text style={[styles.appLabel, { color: colors.foreground }]}>{app.label}</Text>
+                      <Text style={[styles.appTime, { color: colors.primary }]}>
+                        {formatDuration(app.watchMs)}
+                      </Text>
+                    </View>
+                    <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            width: `${percentage}%`,
+                            backgroundColor: app.color,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <Text style={[styles.percentage, { color: colors.muted }]}>
+                      {percentage.toFixed(0)}%
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Attention Score */}
+        {todayAttentionScore && (
+          <View
+            style={[
+              styles.attentionCard,
+              {
+                backgroundColor:
+                  todayAttentionScore.focusLevel === "excellent"
+                    ? colors.success + "15"
+                    : todayAttentionScore.focusLevel === "good"
+                    ? colors.primary + "15"
+                    : todayAttentionScore.focusLevel === "fair"
+                    ? colors.warning + "15"
+                    : colors.error + "15",
+                borderColor:
+                  todayAttentionScore.focusLevel === "excellent"
+                    ? colors.success
+                    : todayAttentionScore.focusLevel === "good"
+                    ? colors.primary
+                    : todayAttentionScore.focusLevel === "fair"
+                    ? colors.warning
+                    : colors.error,
+              },
+            ]}
+          >
+            <View style={styles.attentionHeader}>
+              <Text style={styles.attentionEmoji}>🧠</Text>
+              <View style={styles.attentionInfo}>
+                <Text style={[styles.attentionTitle, { color: colors.foreground }]}>주의력 분석</Text>
+                <Text
+                  style={[
+                    styles.attentionScore,
+                    {
+                      color:
+                        todayAttentionScore.focusLevel === "excellent"
+                          ? colors.success
+                          : todayAttentionScore.focusLevel === "good"
+                          ? colors.primary
+                          : todayAttentionScore.focusLevel === "fair"
+                          ? colors.warning
+                          : colors.error,
+                    },
+                  ]}
+                >
+                  {todayAttentionScore.attentionScore}/100
+                </Text>
+              </View>
+            </View>
+            <View style={styles.attentionDetails}>
+              <View style={styles.detailRow}>
+                <Text style={[styles.detailLabel, { color: colors.muted }]}>시청 시간:</Text>
+                <Text style={[styles.detailValue, { color: colors.foreground }]}>
+                  {todayAttentionScore.watchTimeMinutes}분
+                </Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={[styles.detailLabel, { color: colors.muted }]}>스크롤 주기:</Text>
+                <Text style={[styles.detailValue, { color: colors.foreground }]}>
+                  {todayAttentionScore.scrollFrequency.toFixed(2)}/초
+                </Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={[styles.detailLabel, { color: colors.muted }]}>수준:</Text>
+                <Text
+                  style={[
+                    styles.detailValue,
+                    {
+                      color:
+                        todayAttentionScore.focusLevel === "excellent"
+                          ? colors.success
+                          : todayAttentionScore.focusLevel === "good"
+                          ? colors.primary
+                          : todayAttentionScore.focusLevel === "fair"
+                          ? colors.warning
+                          : colors.error,
+                    },
+                  ]}
+                >
+                  {todayAttentionScore.focusLevel === "excellent"
+                    ? "우수"
+                    : todayAttentionScore.focusLevel === "good"
+                    ? "양호"
+                    : todayAttentionScore.focusLevel === "fair"
+                    ? "보통"
+                    : "낮음"}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.recommendation, { color: colors.muted }]}>
+              💡 {todayAttentionScore.recommendation}
+            </Text>
+          </View>
+        )}
 
         {/* Summary Cards */}
         <View style={styles.summaryGrid}>
@@ -181,6 +328,93 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 13,
+  },
+  appBreakdownCard: {
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    gap: 16,
+  },
+  appStatsContainer: {
+    gap: 12,
+  },
+  appStatItem: {
+    gap: 6,
+  },
+  appStatHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  appEmoji: {
+    fontSize: 18,
+  },
+  appLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+  },
+  appTime: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  progressBar: {
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  percentage: {
+    fontSize: 12,
+    textAlign: "right",
+  },
+  attentionCard: {
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1.5,
+    gap: 12,
+  },
+  attentionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  attentionEmoji: {
+    fontSize: 28,
+  },
+  attentionInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  attentionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  attentionScore: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  attentionDetails: {
+    gap: 8,
+  },
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  detailLabel: {
+    fontSize: 13,
+  },
+  detailValue: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  recommendation: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   summaryGrid: {
     flexDirection: "row",

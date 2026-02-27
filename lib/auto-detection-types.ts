@@ -45,6 +45,8 @@ export interface DetectionSession {
   scrollPatterns: ScrollPattern[];
   /** 활성 상태 */
   isActive: boolean;
+  /** 스크롤 횟수 */
+  scrollCount?: number;
 }
 
 export interface DetectionConfig {
