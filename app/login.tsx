@@ -16,7 +16,7 @@ import {
 } from "react-native";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const TEST_MODE = true; // 테스트 모드: true면 소셜 로그인 비활성화
+const TEST_MODE = true;
 
 const ONBOARDING_SLIDES = [
   {
@@ -42,7 +42,6 @@ export default function LoginScreen() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [testModeEnabled, setTestModeEnabled] = useState(TEST_MODE);
-  const [hasNavigated, setHasNavigated] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -60,17 +59,6 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, loading]);
 
-  // 테스트 모드 활성화 시 자동으로 홈 화면으로 이동 (한 번만)
-  useEffect(() => {
-    if (testModeEnabled && !loading && !hasNavigated) {
-      setHasNavigated(true);
-      const timer = setTimeout(() => {
-        router.replace("/(tabs)");
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [testModeEnabled, loading, hasNavigated]);
-
   const handleScroll = (e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
     setCurrentSlide(idx);
@@ -79,7 +67,6 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (testModeEnabled) {
       // 테스트 모드: 로그인 없이 홈 화면으로 이동
-      setHasNavigated(true);
       router.replace("/(tabs)");
       return;
     }
@@ -95,7 +82,6 @@ export default function LoginScreen() {
 
   const handleToggleTestMode = () => {
     setTestModeEnabled(!testModeEnabled);
-    setHasNavigated(false); // 모드 전환 시 플래그 리셋
   };
 
   if (loading) {
@@ -140,11 +126,13 @@ export default function LoginScreen() {
           horizontal
           pagingEnabled
           showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
           onMomentumScrollEnd={handleScroll}
           style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
         >
           {ONBOARDING_SLIDES.map((slide, i) => (
-            <View key={i} style={[styles.slide, { width: SCREEN_WIDTH }]}>
+            <View key={i} style={[styles.slide, { width: SCREEN_WIDTH - 48 }]}>
               <View style={[styles.slideCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                 <Text style={styles.slideEmoji}>{slide.emoji}</Text>
                 <Text style={[styles.slideTitle, { color: colors.foreground }]}>{slide.title}</Text>
@@ -251,12 +239,16 @@ const styles = StyleSheet.create({
   },
   slidesWrapper: {
     flex: 1,
+    marginHorizontal: -24,
   },
   scrollView: {
     flex: 1,
   },
+  scrollContent: {
+    paddingHorizontal: 24,
+    gap: 16,
+  },
   slide: {
-    paddingHorizontal: 4,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -267,7 +259,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
-    marginHorizontal: 16,
+    flex: 1,
   },
   slideEmoji: {
     fontSize: 52,
