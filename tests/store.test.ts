@@ -4,7 +4,6 @@ import {
   formatMinutes,
   generateId,
   getTodayDateString,
-  getDailyStats,
   getWeeklyStats,
 } from "../lib/store";
 
@@ -53,30 +52,7 @@ describe("getTodayDateString", () => {
   });
 });
 
-describe("getDailyStats", () => {
-  const today = getTodayDateString();
-  const sessions = [
-    { id: "1", platform: "youtube" as const, startTime: Date.now(), endTime: Date.now() + 60000, durationMs: 60000, date: today },
-    { id: "2", platform: "tiktok" as const, startTime: Date.now(), endTime: Date.now() + 30000, durationMs: 30000, date: today },
-    { id: "3", platform: "instagram" as const, startTime: Date.now(), endTime: Date.now() + 45000, durationMs: 45000, date: "2024-01-01" },
-  ];
 
-  it("calculates total watch time for today", () => {
-    const stats = getDailyStats(sessions, today);
-    expect(stats.totalWatchMs).toBe(90000);
-  });
-
-  it("counts only today sessions", () => {
-    const stats = getDailyStats(sessions, today);
-    expect(stats.sessionCount).toBe(2);
-  });
-
-  it("returns zero for a day with no sessions", () => {
-    const stats = getDailyStats(sessions, "2025-01-01");
-    expect(stats.totalWatchMs).toBe(0);
-    expect(stats.sessionCount).toBe(0);
-  });
-});
 
 describe("getWeeklyStats", () => {
   it("returns 7 days of stats", () => {

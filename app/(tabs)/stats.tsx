@@ -83,7 +83,7 @@ export default function StatsScreen() {
           </View>
           <View style={styles.chartLegend}>
             <Text style={[styles.legendText, { color: colors.muted }]}>
-              이번 주 총 {formatDuration(weeklyStats.reduce((s, d) => s + d.totalWatchMs, 0))}
+              이번 주 총 {formatDuration(weeklyStats.reduce((s, d) => s + d.totalWatchMs, 0), "minutes")}
             </Text>
           </View>
         </View>
@@ -101,7 +101,7 @@ export default function StatsScreen() {
                       <Text style={styles.appEmoji}>{app.emoji}</Text>
                       <Text style={[styles.appLabel, { color: colors.foreground }]}>{app.label}</Text>
                       <Text style={[styles.appTime, { color: colors.primary }]}>
-                        {formatDuration(app.watchMs)}
+                        {formatDuration(app.watchMs, "seconds")}
                       </Text>
                     </View>
                     <View style={[styles.progressBar, { backgroundColor: colors.border }]}>

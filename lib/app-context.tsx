@@ -8,7 +8,6 @@ import {
   type ScrollMetrics,
   addDetoxActivity,
   addSession,
-  getDailyStats,
   getTodayDateString,
   loadDetoxActivities,
   loadLastActiveDate,
@@ -25,6 +24,8 @@ import {
   calculateAttentionScore,
   getPlatformStats,
 } from "./store";
+import { permissionsService } from "./permissions-service";
+import { appTrackingService } from "./app-tracking-service";
 
 const TEST_MODE_KEY = "@shorts_detox_test_mode";
 
@@ -120,8 +121,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAttentionScores(scores);
     setScrollMetrics(metrics);
 
-    // 오늘의 플랫폼별 통계 계산
-    const stats = getPlatformStats(s, today);
+    // 오늘의 플래폰별 통계 계산
+    const stats = getPlatformStats(s);
     setPlatformStats(stats);
 
     // 오늘의 주의력 점수 찾기
@@ -134,6 +135,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshData();
   }, [refreshData]);
+
+  // Background permission request and app tracking initialization
+  useEffect(() => {
+    const initializeTracking = async () => {
+      try {
+        const hasPermissions = await permissionsService.ensureDetectionPermissions();
+        console.log("[AppContext] Permissions granted:", hasPermissions);
+        if (hasPermissions) {
+          await appTrackingService.start();
+          console.log("[AppContext] App tracking started");
+        }
+      } catch (error) {
+        console.error("[AppContext] Error initializing tracking:", error);
+      }
+    };
+    initializeTracking();
+    return () => {
+      appTrackingService.stop();
+    };
+  }, []);
 
   const addSessionRecord = useCallback(
     async (session: Session) => {
@@ -161,7 +182,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const today = getTodayDateString();
-  const todayStats = getDailyStats(sessions, today);
+  const todayStats = getPlatformStats(sessions);
 
   return (
     <AppContext.Provider
@@ -170,7 +191,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         detoxActivities,
         settings,
         streak,
-        todayWatchMs: todayStats.totalWatchMs,
+        todayWatchMs: Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0),
         isLoading,
         testMode,
         setTestMode,

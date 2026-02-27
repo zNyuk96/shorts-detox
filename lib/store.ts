@@ -134,21 +134,22 @@ export async function saveSettings(settings: UserSettings): Promise<void> {
 export async function loadStreak(): Promise<number> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.STREAK);
-    return raw ? parseInt(raw, 10) : 0;
+    return raw ? parseInt(raw) : 0;
   } catch {
     return 0;
   }
 }
 
 export async function saveStreak(streak: number): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEYS.STREAK, String(streak));
+  await AsyncStorage.setItem(STORAGE_KEYS.STREAK, streak.toString());
 }
 
 export async function loadLastActiveDate(): Promise<string> {
   try {
-    return (await AsyncStorage.getItem(STORAGE_KEYS.LAST_ACTIVE)) ?? "";
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.LAST_ACTIVE);
+    return raw || getTodayDateString();
   } catch {
-    return "";
+    return getTodayDateString();
   }
 }
 
@@ -156,44 +157,85 @@ export async function saveLastActiveDate(date: string): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEYS.LAST_ACTIVE, date);
 }
 
-// ─── Computed Stats ───────────────────────────────────────────────────────────
+// ─── Date Helpers ─────────────────────────────────────────────────────────────
 
 export function getTodayDateString(): string {
-  return new Date().toISOString().split("T")[0];
+  const today = new Date();
+  return today.toISOString().split("T")[0];
 }
 
-export function getDailyStats(sessions: Session[], date: string): DailyStats {
-  const daySessions = sessions.filter((s) => s.date === date);
-  const totalWatchMs = daySessions.reduce((sum, s) => sum + s.durationMs, 0);
-  return {
-    date,
-    totalWatchMs,
-    sessionCount: daySessions.length,
-    detoxCount: 0,
-    savedMs: 0,
-  };
-}
+export function getWeeklyStats(sessions: Session[]): Array<{ date: string; totalWatchMs: number }> {
+  const stats: Record<string, number> = {};
 
-export function getWeeklyStats(sessions: Session[]): DailyStats[] {
-  const stats: DailyStats[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
-    stats.push(getDailyStats(sessions, dateStr));
+  for (let i = 0; i < 7; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - i));
+    const dateStr = date.toISOString().split("T")[0];
+    stats[dateStr] = 0;
   }
+
+  sessions.forEach((session) => {
+    if (stats[session.date] !== undefined) {
+      stats[session.date] += session.durationMs;
+    }
+  });
+
+  return Object.entries(stats).map(([date, totalWatchMs]) => ({ date, totalWatchMs }));
+}
+
+export function getPlatformStats(
+  sessions: Session[]
+): Record<Platform, { totalMs: number; sessionCount: number }> {
+  const stats: Record<Platform, { totalMs: number; sessionCount: number }> = {
+    youtube: { totalMs: 0, sessionCount: 0 },
+    tiktok: { totalMs: 0, sessionCount: 0 },
+    instagram: { totalMs: 0, sessionCount: 0 },
+    other: { totalMs: 0, sessionCount: 0 },
+  };
+
+  sessions.forEach((session) => {
+    if (stats[session.platform]) {
+      stats[session.platform].totalMs += session.durationMs;
+      stats[session.platform].sessionCount += 1;
+    }
+  });
+
   return stats;
 }
 
-export function formatDuration(ms: number): string {
+// ─── Format Helpers ───────────────────────────────────────────────────────────
+
+export function formatDuration(ms: number, precision: "hours" | "minutes" | "seconds" = "minutes"): string {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
-  if (hours > 0) return `${hours}시간 ${minutes}분`;
-  if (minutes > 0) return `${minutes}분 ${seconds}초`;
-  return `${seconds}초`;
+  if (precision === "seconds") {
+    // 초 단위 정밀도
+    if (hours > 0) {
+      return `${hours}시간 ${minutes}분 ${seconds}초`;
+    } else if (minutes > 0) {
+      return `${minutes}분 ${seconds}초`;
+    } else {
+      return `${seconds}초`;
+    }
+  } else if (precision === "minutes") {
+    // 분 단위 정밀도 (기본)
+    if (hours > 0) {
+      return minutes > 0 ? `${hours}시간 ${minutes}분` : `${hours}시간`;
+    }
+    return `${minutes}분`;
+  } else {
+    // 시간 단위 정밀도
+    if (hours > 0) {
+      return `${hours}시간`;
+    } else if (minutes > 0) {
+      return `${minutes}분`;
+    } else {
+      return `${seconds}초`;
+    }
+  }
 }
 
 export function formatMinutes(minutes: number): string {
@@ -291,31 +333,37 @@ export async function addAttentionScore(score: AttentionScore): Promise<void> {
 export function calculateAttentionScore(watchTimeMinutes: number, avgScrollFrequency: number): AttentionScore {
   // 시청 시간에 따른 점수 (30분 이상이면 감점)
   let watchScore = Math.max(0, 100 - (watchTimeMinutes / 30) * 50);
-  
+
   // 스크롤 주기에 따른 점수 (초당 1회 이상이면 감점)
   let scrollScore = Math.max(0, 100 - avgScrollFrequency * 30);
-  
+
   // 최종 주의력 점수 (평균)
   const attentionScore = Math.round((watchScore + scrollScore) / 2);
-  
+
   // 주의력 수준 판정
   let focusLevel: "excellent" | "good" | "fair" | "poor";
-  let recommendation: string;
-  
   if (attentionScore >= 80) {
     focusLevel = "excellent";
-    recommendation = "매우 좋습니다! 현재 주의력 수준이 우수합니다.";
   } else if (attentionScore >= 60) {
     focusLevel = "good";
-    recommendation = "좋습니다. 조금 더 시청 시간을 줄여보세요.";
   } else if (attentionScore >= 40) {
     focusLevel = "fair";
-    recommendation = "주의력이 저하되고 있습니다. 휴식을 취해보세요.";
   } else {
     focusLevel = "poor";
-    recommendation = "주의력이 심각하게 손상되었습니다. 즉시 휴식이 필요합니다.";
   }
-  
+
+  // 권장사항
+  let recommendation = "";
+  if (focusLevel === "excellent") {
+    recommendation = "주의력이 매우 좋습니다! 이 상태를 유지하세요.";
+  } else if (focusLevel === "good") {
+    recommendation = "주의력이 양호합니다. 조금 더 노력하면 더 좋아질 수 있습니다.";
+  } else if (focusLevel === "fair") {
+    recommendation = "주의력이 저하되고 있습니다. 디톡스 활동을 늘려보세요.";
+  } else {
+    recommendation = "주의력이 매우 낮습니다. 즉시 휴식을 취하고 명상을 해보세요.";
+  }
+
   return {
     date: getTodayDateString(),
     watchTimeMinutes,
@@ -324,39 +372,4 @@ export function calculateAttentionScore(watchTimeMinutes: number, avgScrollFrequ
     focusLevel,
     recommendation,
   };
-}
-
-// ─── App-specific Stats ───────────────────────────────────────────────────
-
-export function getAppStats(sessions: Session[], platform: Platform, date: string): { totalMs: number; sessionCount: number; avgScrollFrequency: number } {
-  const filtered = sessions.filter((s) => s.date === date && s.platform === platform);
-  const totalMs = filtered.reduce((sum, s) => sum + s.durationMs, 0);
-  const avgScrollFrequency = filtered.length > 0 ? filtered.reduce((sum, s) => sum + (s.scrollFrequency || 0), 0) / filtered.length : 0;
-  return {
-    totalMs,
-    sessionCount: filtered.length,
-    avgScrollFrequency,
-  };
-}
-
-// ─── Platform-specific Daily Stats ────────────────────────────────────────
-
-export function getPlatformStats(sessions: Session[], date: string): Record<Platform, { totalMs: number; sessionCount: number }> {
-  const platforms: Platform[] = ["youtube", "tiktok", "instagram", "other"];
-  const stats: Record<Platform, { totalMs: number; sessionCount: number }> = {
-    youtube: { totalMs: 0, sessionCount: 0 },
-    tiktok: { totalMs: 0, sessionCount: 0 },
-    instagram: { totalMs: 0, sessionCount: 0 },
-    other: { totalMs: 0, sessionCount: 0 },
-  };
-  
-  for (const platform of platforms) {
-    const result = getAppStats(sessions, platform, date);
-    stats[platform] = {
-      totalMs: result.totalMs,
-      sessionCount: result.sessionCount,
-    };
-  }
-  
-  return stats;
 }
