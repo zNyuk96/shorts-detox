@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { ScreenContainer } from "@/components/screen-container";
 import { formatMinutes } from "@/lib/store";
 import { router } from "expo-router";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -13,6 +14,7 @@ import {
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { detectionService } from "@/lib/detection-service";
 
 const GOAL_OPTIONS = [15, 30, 45, 60, 90, 120];
 
@@ -20,6 +22,43 @@ export default function SettingsScreen() {
   const colors = useColors();
   const { settings, updateSettings } = useAppContext();
   const { user, logout } = useAuth();
+  const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(false);
+  const [detectionPermissionGranted, setDetectionPermissionGranted] = useState(false);
+
+  useEffect(() => {
+    checkDetectionStatus();
+  }, []);
+
+  const checkDetectionStatus = async () => {
+    const hasPermission = await detectionService.checkPermissions();
+    setDetectionPermissionGranted(hasPermission);
+    setAutoDetectionEnabled(detectionService.isRunning());
+  };
+
+  const handleAutoDetectionToggle = async () => {
+    if (!autoDetectionEnabled) {
+      // 자동 감지 활성화
+      const hasPermission = await detectionService.checkPermissions();
+      if (!hasPermission) {
+        // 권한 요청
+        const granted = await detectionService.requestPermissions();
+        if (!granted) {
+          Alert.alert(
+            "권한 필요",
+            "자동 감지 기능을 사용하려면 기기 센서 접근 권한이 필요합니다."
+          );
+          return;
+        }
+      }
+      await detectionService.start();
+      setAutoDetectionEnabled(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      // 자동 감지 비활성화
+      await detectionService.stop();
+      setAutoDetectionEnabled(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert("로그아웃", "정말 로그아웃 하시겠어요?", [
@@ -96,6 +135,32 @@ export default function SettingsScreen() {
                 </Text>
               </Pressable>
             ))}
+          </View>
+        </View>
+
+        {/* Auto Detection */}
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.sectionRow}>
+            <View>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>🤖 자동 감지</Text>
+              <Text style={[styles.sectionDesc, { color: colors.muted }]}>
+                스크롤 패턴으로 시간 자동 기록
+              </Text>
+            </View>
+            <Pressable
+              onPress={handleAutoDetectionToggle}
+              style={[
+                styles.toggle,
+                { backgroundColor: autoDetectionEnabled ? colors.primary : colors.border },
+              ]}
+            >
+              <View
+                style={[
+                  styles.toggleThumb,
+                  { transform: [{ translateX: autoDetectionEnabled ? 18 : 2 }] },
+                ]}
+              />
+            </Pressable>
           </View>
         </View>
 
