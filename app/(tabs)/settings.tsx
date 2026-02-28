@@ -45,6 +45,16 @@ export default function SettingsScreen() {
     } catch (e) {}
   };
 
+  const openUsageSettings = async () => {
+    await AppDetector.openUsageStatsSettings();
+    setTimeout(checkPermissionStatus, 2000);
+  };
+
+  const openAccessibilitySettingsScreen = async () => {
+    await AppDetector.openAccessibilitySettings();
+    setTimeout(checkPermissionStatus, 2000);
+  };
+
   const handleAutoDetectionToggle = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -53,56 +63,57 @@ export default function SettingsScreen() {
       const hasUsage = await AppDetector.hasUsageStatsPermission();
       if (!hasUsage) {
         Alert.alert(
-          "사용량 접근 권한 필요",
-          "어떤 앱을 사용하는지 파악하기 위해 '사용량 접근' 권한이 필요합니다.\n\n설정이 열리면 '숏츠 디톡스'를 찾아 허용해주세요.",
+          "사용 앱 접근 권한 필요",
+          "쇼츠 시청량 파악을 위해 사용 앱 접근이 필요합니다.\n쇼츠 시청량 파악 외에는 활용되지 않습니다.\n\n설정이 열리면 '숏츠 디톡스'를 찾아 허용해주세요.",
           [
             { text: "취소", style: "cancel" },
-            {
-              text: "설정 열기",
-              onPress: async () => {
-                await AppDetector.openUsageStatsSettings();
-                setTimeout(checkPermissionStatus, 1500);
-              },
-            },
+            { text: "설정 열기", onPress: openUsageSettings },
           ]
         );
         return;
       }
 
-      // ── Step 2: 백그라운드 모니터링 시작 ──
-      const started = await AppDetector.startBackgroundMonitoring();
-      if (started) {
-        setAutoDetectionEnabled(true);
-        await updateSettings({ autoDetectionEnabled: true });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-        // ── Step 3: 접근성 권한 안내 (스크롤 감지, 선택사항) ──
-        const hasAcc = await AppDetector.isAccessibilityServiceEnabled();
-        setHasAccessibility(hasAcc);
-        if (!hasAcc) {
-          Alert.alert(
-            "스크롤 감지 권한 (선택사항)",
-            "더 정확한 쇼츠 감지를 위해 접근성 권한을 허용하면 스크롤 패턴도 분석할 수 있어요.\n\n설정이 열리면 '설치된 앱' > '숏츠 디톡스'를 활성화해주세요.",
-            [
-              { text: "나중에", style: "cancel" },
-              {
-                text: "설정 열기",
-                onPress: async () => {
-                  await AppDetector.openAccessibilitySettings();
-                  setTimeout(checkPermissionStatus, 1500);
-                },
+      // ── Step 2: 접근성 권한 안내 (스크롤 감지, 선택사항) ──
+      const hasAcc = await AppDetector.isAccessibilityServiceEnabled();
+      setHasAccessibility(hasAcc);
+      if (!hasAcc) {
+        Alert.alert(
+          "스크롤 감지 설정 (선택사항)",
+          "유튜브·인스타·틱톡에서 스크롤 패턴을 감지하면 쇼츠 시청을 더 정확하게 추적할 수 있어요.\n\n설정 → 설치된 앱 → 숏츠 디톡스를 활성화해주세요.",
+          [
+            {
+              text: "건너뛰기",
+              style: "cancel",
+              onPress: () => startMonitoring(),
+            },
+            {
+              text: "설정 열기",
+              onPress: async () => {
+                await openAccessibilitySettingsScreen();
+                startMonitoring();
               },
-            ]
-          );
-        }
+            },
+          ]
+        );
       } else {
-        Alert.alert("오류", "자동 감지를 시작할 수 없습니다. 권한을 다시 확인해주세요.");
+        await startMonitoring();
       }
     } else {
       // ── 자동 감지 끄기 ──
       await AppDetector.stopBackgroundMonitoring();
       setAutoDetectionEnabled(false);
       await updateSettings({ autoDetectionEnabled: false });
+    }
+  };
+
+  const startMonitoring = async () => {
+    const started = await AppDetector.startBackgroundMonitoring();
+    if (started) {
+      setAutoDetectionEnabled(true);
+      await updateSettings({ autoDetectionEnabled: true });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      Alert.alert("오류", "자동 감지를 시작할 수 없습니다.\n사용 앱 접근 권한을 다시 확인해주세요.");
     }
   };
 
@@ -213,23 +224,15 @@ export default function SettingsScreen() {
           {Platform.OS === "android" && (
             <View style={styles.permissionStatus}>
               <PermissionRow
-                label="사용량 접근 (필수)"
+                label="사용 앱 접근 (필수)"
                 granted={hasUsagePermission}
-                onPress={() =>
-                  AppDetector.openUsageStatsSettings().then(() =>
-                    setTimeout(checkPermissionStatus, 1500)
-                  )
-                }
+                onPress={openUsageSettings}
                 colors={colors}
               />
               <PermissionRow
                 label="스크롤 감지 (선택)"
                 granted={hasAccessibility}
-                onPress={() =>
-                  AppDetector.openAccessibilitySettings().then(() =>
-                    setTimeout(checkPermissionStatus, 1500)
-                  )
-                }
+                onPress={openAccessibilitySettingsScreen}
                 colors={colors}
               />
             </View>

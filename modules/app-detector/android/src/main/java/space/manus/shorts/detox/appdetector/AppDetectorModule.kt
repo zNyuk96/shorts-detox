@@ -110,11 +110,11 @@ class AppDetectorModule : Module() {
     // ── 사용량 접근 설정 화면 열기 ──
     AsyncFunction("openUsageStatsSettings") { promise: Promise ->
       try {
-        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val activity = appContext.currentActivity ?: run { promise.resolve(false); return@AsyncFunction }
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        ctx.startActivity(intent)
+        activity.startActivity(intent)
         promise.resolve(true)
       } catch (e: Exception) { promise.resolve(false) }
     }
@@ -122,11 +122,11 @@ class AppDetectorModule : Module() {
     // ── 접근성 설정 화면 열기 ──
     AsyncFunction("openAccessibilitySettings") { promise: Promise ->
       try {
-        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val activity = appContext.currentActivity ?: run { promise.resolve(false); return@AsyncFunction }
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        ctx.startActivity(intent)
+        activity.startActivity(intent)
         promise.resolve(true)
       } catch (e: Exception) { promise.resolve(false) }
     }
@@ -134,7 +134,7 @@ class AppDetectorModule : Module() {
     // ── 접근성 서비스 활성화 여부 ──
     AsyncFunction("isAccessibilityServiceEnabled") { promise: Promise ->
       try {
-        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val ctx: Context = appContext.currentActivity ?: appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
         val enabledServices = Settings.Secure.getString(
           ctx.contentResolver,
           Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
