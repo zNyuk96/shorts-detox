@@ -55,68 +55,65 @@ class BackgroundTaskService {
 
   /**
    * 쇼츠 사용 모니터링
-   * - 현재 앱 감지
-   * - 스크롤 패턴 확인
-   * - 시청 시간 누적
-   * - 임계값 초과 체크
+   * - 현재 포그라운드 앱 감지 (유튜브/인스타/틱톡 등)
+   * - 스크롤 패턴(1s~1분 간격) 유효 시청 시간만 누적
+   * - 오늘 저장된 세션 + 현재 세션 유효 시간 합으로 임계값 체크
    */
   private async monitorShortsUsage(): Promise<void> {
     const now = Date.now();
 
-    // 5초 간격으로만 체크
-    if (now - this.lastCheckTime < this.checkIntervalMs) {
-      return;
-    }
-
+    if (now - this.lastCheckTime < this.checkIntervalMs) return;
     this.lastCheckTime = now;
 
     try {
       const currentApp = realAppDetectionService.getCurrentApp();
-      const scrollCount = realAppDetectionService.getScrollCount();
-      const sessionDuration = realAppDetectionService.getSessionDuration();
+      const todayStoredMs = await this.getTodayTotalWatchTime();
+      const currentValidatedMs =
+        currentApp?.isShortsApp === true
+          ? realAppDetectionService.getValidatedShortsDurationMs()
+          : 0;
+      const totalTodayMs = todayStoredMs + currentValidatedMs;
 
-      // 쇼츠 앱이 아니면 무시
-      if (!currentApp?.isShortsApp) {
-        return;
+      if (currentApp?.isShortsApp) {
+        const scrollCount = realAppDetectionService.getScrollCount();
+        console.log(
+          "[BackgroundTask] Monitoring:",
+          currentApp.appName,
+          `Stored: ${todayStoredMs}ms, Current validated: ${currentValidatedMs}ms, Scrolls: ${scrollCount}`
+        );
       }
 
-      // 스크롤 패턴 확인 (최소 1회 이상 스크롤)
-      if (scrollCount === 0) {
-        return;
-      }
-
-      console.log(
-        "[BackgroundTask] Monitoring:",
-        currentApp.appName,
-        `Duration: ${sessionDuration}ms, Scrolls: ${scrollCount}`
-      );
-
-      // 임계값 체크
-      await this.checkThreshold(sessionDuration);
+      await this.checkThreshold(totalTodayMs);
     } catch (error) {
       console.error("[BackgroundTask] Error monitoring shorts usage:", error);
     }
   }
 
   /**
-   * 임계값 체크
+   * 임계값 체크 (오늘 누적 시청 시간 기준)
+   * 초과 시 알림 + pending detox 설정 + 콜백(포그라운드 시 디톡스 페이지 오픈용)
    */
-  private async checkThreshold(durationMs: number): Promise<void> {
+  private async checkThreshold(totalTodayMs: number): Promise<void> {
     try {
       const settings = await loadSettings();
       const thresholdMs = (settings.alertThresholdMinutes || 30) * 60 * 1000;
 
-      // 임계값 초과 확인
-      if (durationMs >= thresholdMs) {
-        console.log(
-          "[BackgroundTask] Threshold exceeded!",
-          `${durationMs}ms >= ${thresholdMs}ms`
-        );
+      if (totalTodayMs < thresholdMs) return;
 
-        // 콜백 실행
-        if (this.onThresholdExceeded) {
-          this.onThresholdExceeded(durationMs);
-        }
+      console.log(
+        "[BackgroundTask] Threshold exceeded!",
+        `${totalTodayMs}ms >= ${thresholdMs}ms`
+      );
+
+      const { setPendingDetox } = await import("./pending-detox");
+      await setPendingDetox(totalTodayMs, thresholdMs);
+
+      const thresholdMinutes = Math.floor(thresholdMs / 60000);
+      const { notificationService } = await import("./notification-service");
+      await notificationService.checkAndSendAlert(totalTodayMs, thresholdMinutes);
+
+      if (this.onThresholdExceeded) {
+        this.onThresholdExceeded(totalTodayMs);
       }
     } catch (error) {
       console.error("[BackgroundTask] Error checking threshold:", error);

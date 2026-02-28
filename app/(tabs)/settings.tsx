@@ -15,19 +15,31 @@ import {
 } from "react-native";
 import * as Haptics from "expo-haptics";
 import { detectionService } from "@/lib/detection-service";
+import { realAppDetectionService } from "@/lib/real-app-detection";
+import {
+  openAccessibilitySettings,
+  ACCESSIBILITY_PROMPT_MESSAGE,
+  PRIVACY_NOTICE_LOCAL_ONLY,
+} from "@/lib/accessibility-settings";
+import { Platform } from "react-native";
 
 const GOAL_OPTIONS = [15, 30, 45, 60, 90, 120];
 
 export default function SettingsScreen() {
   const colors = useColors();
-  const { settings, updateSettings } = useAppContext();
+  const { settings, updateSettings, testMode } = useAppContext();
   const { user, logout } = useAuth();
   const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(false);
   const [detectionPermissionGranted, setDetectionPermissionGranted] = useState(false);
+  const [scrollSimulationOn, setScrollSimulationOn] = useState(false);
 
   useEffect(() => {
     checkDetectionStatus();
   }, []);
+
+  useEffect(() => {
+    setScrollSimulationOn(realAppDetectionService.isScrollSimulationActive());
+  }, [testMode]);
 
   const checkDetectionStatus = async () => {
     const hasPermission = await detectionService.checkPermissions();
@@ -37,10 +49,33 @@ export default function SettingsScreen() {
 
   const handleAutoDetectionToggle = async () => {
     if (!autoDetectionEnabled) {
-      // 자동 감지 활성화
+      // Android: 접근성 권한 안내 후 설정으로 이동 → 자동 감지 시작
+      if (Platform.OS === "android") {
+        Alert.alert(
+          "접근성 권한 필요",
+          ACCESSIBILITY_PROMPT_MESSAGE,
+          [
+            { text: "취소", style: "cancel" },
+            {
+              text: "설정 열기",
+              onPress: async () => {
+                const opened = await openAccessibilitySettings();
+                if (opened) {
+                  await detectionService.start();
+                  setAutoDetectionEnabled(true);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                } else {
+                  Alert.alert("안내", "설정을 열 수 없어요. 설정 > 접근성에서 '숏츠 디톡스'를 켜주세요.");
+                }
+              },
+            },
+          ]
+        );
+        return;
+      }
+      // iOS 등: 기존 권한 플로우
       const hasPermission = await detectionService.checkPermissions();
       if (!hasPermission) {
-        // 권한 요청
         const granted = await detectionService.requestPermissions();
         if (!granted) {
           Alert.alert(
@@ -54,7 +89,6 @@ export default function SettingsScreen() {
       setAutoDetectionEnabled(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
-      // 자동 감지 비활성화
       await detectionService.stop();
       setAutoDetectionEnabled(false);
     }
@@ -162,6 +196,11 @@ export default function SettingsScreen() {
               />
             </Pressable>
           </View>
+          <View style={[styles.privacyNotice, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <Text style={[styles.privacyNoticeText, { color: colors.muted }]}>
+              🔒 {PRIVACY_NOTICE_LOCAL_ONLY}
+            </Text>
+          </View>
         </View>
 
         {/* Notification Settings */}
@@ -192,6 +231,43 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
         </View>
+
+        {/* Scroll simulation (test mode only) */}
+        {testMode && (
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.sectionRow}>
+              <View>
+                <Text style={[styles.sectionTitle, { color: colors.foreground }]}>🧪 스크롤 시뮬레이션</Text>
+                <Text style={[styles.sectionDesc, { color: colors.muted }]}>
+                  네이티브 없이 5~15초 간격 스크롤을 흉내 내 유효 시청·임계값 동작을 테스트해요
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  if (scrollSimulationOn) {
+                    realAppDetectionService.stopScrollSimulation();
+                    setScrollSimulationOn(false);
+                  } else {
+                    realAppDetectionService.startScrollSimulation();
+                    setScrollSimulationOn(true);
+                  }
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                style={[
+                  styles.toggle,
+                  { backgroundColor: scrollSimulationOn ? colors.primary : colors.border },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.toggleThumb,
+                    { transform: [{ translateX: scrollSimulationOn ? 18 : 2 }] },
+                  ]}
+                />
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {/* App Info */}
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -283,6 +359,17 @@ const styles = StyleSheet.create({
   sectionDesc: {
     fontSize: 13,
     marginTop: -4,
+  },
+  privacyNotice: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  privacyNoticeText: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "center",
   },
   optionGrid: {
     flexDirection: "row",

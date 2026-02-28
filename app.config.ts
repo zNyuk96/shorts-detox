@@ -64,7 +64,11 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    permissions: [
+      "POST_NOTIFICATIONS",
+      "PACKAGE_USAGE_STATS",
+      "FOREGROUND_SERVICE",
+    ],
     intentFilters: [
       {
         action: "VIEW",
@@ -86,6 +90,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    "./plugins/withAppDetector",
     [
       "expo-audio",
       {

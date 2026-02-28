@@ -29,7 +29,6 @@ import { appTrackingService } from "./app-tracking-service";
 import { realAppDetectionService } from "./real-app-detection";
 import { backgroundTaskService } from "./background-task-service";
 import { scrollDetectionService } from "./scroll-detection-service";
-import { useNavigation } from "@react-navigation/native";
 
 const TEST_MODE_KEY = "@shorts_detox_test_mode";
 
@@ -186,6 +185,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const today = getTodayDateString();
   const todayStats = getPlatformStats(sessions);
+  const storedTodayMs = Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0);
+  const currentApp = realAppDetectionService.getCurrentApp();
+  const inProgressValidatedMs =
+    currentApp?.isShortsApp === true
+      ? realAppDetectionService.getValidatedShortsDurationMs()
+      : 0;
+  const todayWatchMs = storedTodayMs + inProgressValidatedMs;
 
   return (
     <AppContext.Provider
@@ -194,7 +200,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         detoxActivities,
         settings,
         streak,
-        todayWatchMs: Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0),
+        todayWatchMs,
         isLoading,
         testMode,
         setTestMode,

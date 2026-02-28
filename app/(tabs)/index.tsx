@@ -105,7 +105,7 @@ export default function HomeScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
-  // 알람 체크 및 Recovery 페이지 트리거
+  // 알람 체크: 임계값 초과 시 알림 + 디톡스 페이지 표시
   useEffect(() => {
     const checkAlerts = async () => {
       const thresholdMinutes = settings.alertThresholdMinutes || 30;
@@ -115,25 +115,21 @@ export default function HomeScreen() {
       if (watchMinutes >= thresholdMinutes) {
         await notificationService.checkAndSendAlert(todayWatchMs, thresholdMinutes);
         await foregroundService.triggerRecovery(todayWatchMs, thresholdMs);
-        router.push("/recovery" as any);
+        router.replace(`/detox?watchMs=${todayWatchMs}` as any);
       }
     };
 
     checkAlerts();
-
-    // 1분마다 알람 체크
     const interval = setInterval(checkAlerts, 60000);
     return () => clearInterval(interval);
   }, [todayWatchMs, settings.alertThresholdMinutes]);
 
-  // Foreground 서비스 초기화
+  // 포그라운드 서비스: 임계값 초과 시 디톡스 페이지 오픈 콜백
   useEffect(() => {
-    foregroundService.start((watchMs, thresholdMs) => {
-      router.push("/recovery" as any);
+    foregroundService.start((watchMs) => {
+      router.replace(`/detox?watchMs=${watchMs}` as any);
     });
-    return () => {
-      foregroundService.stop();
-    };
+    return () => foregroundService.stop();
   }, []);
 
   const goalMs = settings.dailyGoalMinutes * 60 * 1000;

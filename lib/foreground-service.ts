@@ -103,22 +103,26 @@ export class ForegroundService {
   }
 
   /**
-   * 임계값 초과 시 포그라운드로 강제 전환
+   * 임계값 초과 시: 알림 발송 + pending detox 저장 + 디톡스 페이지 오픈 콜백
+   * (앱이 포그라운드면 즉시 디톡스, 백그라운드면 알림 탭 시 pending으로 디톡스 오픈)
    */
   async triggerRecovery(watchMs: number, thresholdMs: number): Promise<void> {
     try {
-      // 진동 피드백
+      const { setPendingDetox } = await import("./pending-detox");
+      await setPendingDetox(watchMs, thresholdMs);
+
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
-      // 알림 발송 (사용자에게 알림)
+      const watchMin = Math.floor(watchMs / 60000);
+      const thresholdMin = Math.floor(thresholdMs / 60000);
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: "🛑 주의력 향상 시간",
-          body: "시청 시간 임계값을 초과했습니다. 주의력을 회복해보세요!",
+          title: "🛑 숏츠 디톡스",
+          body: `${watchMin}분 시청했어요 (목표 ${thresholdMin}분). 잠깐 멈추고 디톡스해볼까요?`,
           sound: true,
           badge: 1,
           data: {
-            type: "recovery",
+            type: "detox",
             watchMs,
             thresholdMs,
           },
@@ -126,12 +130,11 @@ export class ForegroundService {
         trigger: null,
       });
 
-      // 콜백 실행 (Recovery 페이지로 이동)
       if (this.onThresholdExceeded) {
         this.onThresholdExceeded(watchMs, thresholdMs);
       }
 
-      console.log("[ForegroundService] Recovery triggered");
+      console.log("[ForegroundService] Detox triggered, watchMs:", watchMs);
     } catch (error) {
       console.error("[ForegroundService] Failed to trigger recovery:", error);
     }
