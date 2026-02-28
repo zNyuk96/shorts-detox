@@ -14,83 +14,95 @@ import {
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { detectionService } from "@/lib/detection-service";
-import { realAppDetectionService } from "@/lib/real-app-detection";
-import {
-  openAccessibilitySettings,
-  ACCESSIBILITY_PROMPT_MESSAGE,
-  PRIVACY_NOTICE_LOCAL_ONLY,
-} from "@/lib/accessibility-settings";
+import { AppDetector } from "@/modules/app-detector/src";
 import { Platform } from "react-native";
 
 const GOAL_OPTIONS = [15, 30, 45, 60, 90, 120];
 
 export default function SettingsScreen() {
   const colors = useColors();
-  const { settings, updateSettings, testMode } = useAppContext();
+  const { settings, updateSettings } = useAppContext();
   const { user, logout } = useAuth();
   const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(false);
-  const [detectionPermissionGranted, setDetectionPermissionGranted] = useState(false);
-  const [scrollSimulationOn, setScrollSimulationOn] = useState(false);
+  const [hasUsagePermission, setHasUsagePermission] = useState(false);
+  const [hasAccessibility, setHasAccessibility] = useState(false);
 
   useEffect(() => {
-    checkDetectionStatus();
+    checkPermissionStatus();
   }, []);
 
-  useEffect(() => {
-    setScrollSimulationOn(realAppDetectionService.isScrollSimulationActive());
-  }, [testMode]);
-
-  const checkDetectionStatus = async () => {
-    const hasPermission = await detectionService.checkPermissions();
-    setDetectionPermissionGranted(hasPermission);
-    setAutoDetectionEnabled(detectionService.isRunning());
+  const checkPermissionStatus = async () => {
+    if (Platform.OS !== "android") return;
+    try {
+      const [usage, accessibility, isRunning] = await Promise.all([
+        AppDetector.hasUsageStatsPermission(),
+        AppDetector.isAccessibilityServiceEnabled(),
+        AppDetector.isBackgroundMonitoringActive(),
+      ]);
+      setHasUsagePermission(usage);
+      setHasAccessibility(accessibility);
+      setAutoDetectionEnabled(isRunning || !!settings.autoDetectionEnabled);
+    } catch (e) {}
   };
 
   const handleAutoDetectionToggle = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     if (!autoDetectionEnabled) {
-      // Android: 접근성 권한 안내 후 설정으로 이동 → 자동 감지 시작
-      if (Platform.OS === "android") {
+      // ── Step 1: 사용량 접근 권한 확인 ──
+      const hasUsage = await AppDetector.hasUsageStatsPermission();
+      if (!hasUsage) {
         Alert.alert(
-          "접근성 권한 필요",
-          ACCESSIBILITY_PROMPT_MESSAGE,
+          "사용량 접근 권한 필요",
+          "어떤 앱을 사용하는지 파악하기 위해 '사용량 접근' 권한이 필요합니다.\n\n설정이 열리면 '숏츠 디톡스'를 찾아 허용해주세요.",
           [
             { text: "취소", style: "cancel" },
             {
               text: "설정 열기",
               onPress: async () => {
-                const opened = await openAccessibilitySettings();
-                if (opened) {
-                  await detectionService.start();
-                  setAutoDetectionEnabled(true);
-                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                } else {
-                  Alert.alert("안내", "설정을 열 수 없어요. 설정 > 접근성에서 '숏츠 디톡스'를 켜주세요.");
-                }
+                await AppDetector.openUsageStatsSettings();
+                setTimeout(checkPermissionStatus, 1500);
               },
             },
           ]
         );
         return;
       }
-      // iOS 등: 기존 권한 플로우
-      const hasPermission = await detectionService.checkPermissions();
-      if (!hasPermission) {
-        const granted = await detectionService.requestPermissions();
-        if (!granted) {
+
+      // ── Step 2: 백그라운드 모니터링 시작 ──
+      const started = await AppDetector.startBackgroundMonitoring();
+      if (started) {
+        setAutoDetectionEnabled(true);
+        await updateSettings({ autoDetectionEnabled: true });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        // ── Step 3: 접근성 권한 안내 (스크롤 감지, 선택사항) ──
+        const hasAcc = await AppDetector.isAccessibilityServiceEnabled();
+        setHasAccessibility(hasAcc);
+        if (!hasAcc) {
           Alert.alert(
-            "권한 필요",
-            "자동 감지 기능을 사용하려면 기기 센서 접근 권한이 필요합니다."
+            "스크롤 감지 권한 (선택사항)",
+            "더 정확한 쇼츠 감지를 위해 접근성 권한을 허용하면 스크롤 패턴도 분석할 수 있어요.\n\n설정이 열리면 '설치된 앱' > '숏츠 디톡스'를 활성화해주세요.",
+            [
+              { text: "나중에", style: "cancel" },
+              {
+                text: "설정 열기",
+                onPress: async () => {
+                  await AppDetector.openAccessibilitySettings();
+                  setTimeout(checkPermissionStatus, 1500);
+                },
+              },
+            ]
           );
-          return;
         }
+      } else {
+        Alert.alert("오류", "자동 감지를 시작할 수 없습니다. 권한을 다시 확인해주세요.");
       }
-      await detectionService.start();
-      setAutoDetectionEnabled(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
-      await detectionService.stop();
+      // ── 자동 감지 끄기 ──
+      await AppDetector.stopBackgroundMonitoring();
       setAutoDetectionEnabled(false);
+      await updateSettings({ autoDetectionEnabled: false });
     }
   };
 
@@ -175,10 +187,10 @@ export default function SettingsScreen() {
         {/* Auto Detection */}
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.sectionRow}>
-            <View>
+            <View style={styles.sectionLabelGroup}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>🤖 자동 감지</Text>
               <Text style={[styles.sectionDesc, { color: colors.muted }]}>
-                스크롤 패턴으로 시간 자동 기록
+                백그라운드에서 쇼츠 시청 자동 추적
               </Text>
             </View>
             <Pressable
@@ -196,9 +208,36 @@ export default function SettingsScreen() {
               />
             </Pressable>
           </View>
+
+          {/* 권한 상태 표시 */}
+          {Platform.OS === "android" && (
+            <View style={styles.permissionStatus}>
+              <PermissionRow
+                label="사용량 접근 (필수)"
+                granted={hasUsagePermission}
+                onPress={() =>
+                  AppDetector.openUsageStatsSettings().then(() =>
+                    setTimeout(checkPermissionStatus, 1500)
+                  )
+                }
+                colors={colors}
+              />
+              <PermissionRow
+                label="스크롤 감지 (선택)"
+                granted={hasAccessibility}
+                onPress={() =>
+                  AppDetector.openAccessibilitySettings().then(() =>
+                    setTimeout(checkPermissionStatus, 1500)
+                  )
+                }
+                colors={colors}
+              />
+            </View>
+          )}
+
           <View style={[styles.privacyNotice, { backgroundColor: colors.background, borderColor: colors.border }]}>
             <Text style={[styles.privacyNoticeText, { color: colors.muted }]}>
-              🔒 {PRIVACY_NOTICE_LOCAL_ONLY}
+              🔒 모든 데이터는 기기에만 저장됩니다. 외부 전송 없음.
             </Text>
           </View>
         </View>
@@ -206,10 +245,10 @@ export default function SettingsScreen() {
         {/* Notification Settings */}
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.sectionRow}>
-            <View>
+            <View style={styles.sectionLabelGroup}>
               <Text style={[styles.sectionTitle, { color: colors.foreground }]}>🔔 알림 설정</Text>
               <Text style={[styles.sectionDesc, { color: colors.muted }]}>
-                시청 중 주기적으로 알림을 받아요
+                시청 시간 초과 시 알림을 받아요
               </Text>
             </View>
             <Pressable
@@ -231,43 +270,6 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
         </View>
-
-        {/* Scroll simulation (test mode only) */}
-        {testMode && (
-          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.sectionRow}>
-              <View>
-                <Text style={[styles.sectionTitle, { color: colors.foreground }]}>🧪 스크롤 시뮬레이션</Text>
-                <Text style={[styles.sectionDesc, { color: colors.muted }]}>
-                  네이티브 없이 5~15초 간격 스크롤을 흉내 내 유효 시청·임계값 동작을 테스트해요
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => {
-                  if (scrollSimulationOn) {
-                    realAppDetectionService.stopScrollSimulation();
-                    setScrollSimulationOn(false);
-                  } else {
-                    realAppDetectionService.startScrollSimulation();
-                    setScrollSimulationOn(true);
-                  }
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-                style={[
-                  styles.toggle,
-                  { backgroundColor: scrollSimulationOn ? colors.primary : colors.border },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.toggleThumb,
-                    { transform: [{ translateX: scrollSimulationOn ? 18 : 2 }] },
-                  ]}
-                />
-              </Pressable>
-            </View>
-          </View>
-        )}
 
         {/* App Info */}
         <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -295,6 +297,33 @@ export default function SettingsScreen() {
         </Pressable>
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function PermissionRow({
+  label,
+  granted,
+  onPress,
+  colors,
+}: {
+  label: string;
+  granted: boolean;
+  onPress: () => void;
+  colors: any;
+}) {
+  return (
+    <Pressable onPress={granted ? undefined : onPress} style={styles.permissionRow}>
+      <View
+        style={[
+          styles.permissionDot,
+          { backgroundColor: granted ? "#4CAF82" : colors.error },
+        ]}
+      />
+      <Text style={[styles.permissionLabel, { color: colors.muted }]}>{label}</Text>
+      {!granted && (
+        <Text style={[styles.permissionAction, { color: colors.primary }]}>설정 열기 →</Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -352,19 +381,45 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  sectionLabelGroup: {
+    flex: 1,
+    gap: 2,
+    marginRight: 12,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
   },
   sectionDesc: {
     fontSize: 13,
-    marginTop: -4,
+  },
+  permissionStatus: {
+    gap: 6,
+    paddingTop: 4,
+  },
+  permissionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 3,
+  },
+  permissionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  permissionLabel: {
+    fontSize: 13,
+    flex: 1,
+  },
+  permissionAction: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   privacyNotice: {
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    marginTop: 8,
   },
   privacyNoticeText: {
     fontSize: 12,

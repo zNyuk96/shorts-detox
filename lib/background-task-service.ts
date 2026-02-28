@@ -66,22 +66,8 @@ class BackgroundTaskService {
     this.lastCheckTime = now;
 
     try {
-      const currentApp = realAppDetectionService.getCurrentApp();
       const todayStoredMs = await this.getTodayTotalWatchTime();
-      const currentValidatedMs =
-        currentApp?.isShortsApp === true
-          ? realAppDetectionService.getValidatedShortsDurationMs()
-          : 0;
-      const totalTodayMs = todayStoredMs + currentValidatedMs;
-
-      if (currentApp?.isShortsApp) {
-        const scrollCount = realAppDetectionService.getScrollCount();
-        console.log(
-          "[BackgroundTask] Monitoring:",
-          currentApp.appName,
-          `Stored: ${todayStoredMs}ms, Current validated: ${currentValidatedMs}ms, Scrolls: ${scrollCount}`
-        );
-      }
+      const totalTodayMs = todayStoredMs;
 
       await this.checkThreshold(totalTodayMs);
     } catch (error) {

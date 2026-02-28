@@ -1,4 +1,4 @@
-﻿import { NativeModules, Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 import type { AppDetectorInterface } from "./AppDetector.types";
 
 const stub: AppDetectorInterface = {
@@ -6,6 +6,14 @@ const stub: AppDetectorInterface = {
   hasUsageStatsPermission: async () => false,
   getUsageStats: async () => ({}),
   getAppName: async (pkg) => pkg,
+  startBackgroundMonitoring: async () => false,
+  stopBackgroundMonitoring: async () => false,
+  isBackgroundMonitoringActive: async () => false,
+  getPendingSessions: async () => "[]",
+  clearPendingSessions: async () => false,
+  openUsageStatsSettings: async () => false,
+  openAccessibilitySettings: async () => false,
+  isAccessibilityServiceEnabled: async () => false,
 };
 
 const createAndroidModule = (): AppDetectorInterface => {
@@ -16,6 +24,14 @@ const createAndroidModule = (): AppDetectorInterface => {
     hasUsageStatsPermission: () => native.hasUsageStatsPermission(),
     getUsageStats: (minutes: number) => native.getUsageStats(minutes),
     getAppName: (packageName: string) => native.getAppName(packageName),
+    startBackgroundMonitoring: () => native.startBackgroundMonitoring(),
+    stopBackgroundMonitoring: () => native.stopBackgroundMonitoring(),
+    isBackgroundMonitoringActive: () => native.isBackgroundMonitoringActive(),
+    getPendingSessions: () => native.getPendingSessions(),
+    clearPendingSessions: () => native.clearPendingSessions(),
+    openUsageStatsSettings: () => native.openUsageStatsSettings(),
+    openAccessibilitySettings: () => native.openAccessibilitySettings(),
+    isAccessibilityServiceEnabled: () => native.isAccessibilityServiceEnabled(),
   };
 };
 

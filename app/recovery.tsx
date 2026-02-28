@@ -75,12 +75,14 @@ export default function RecoveryScreen() {
       activityType = "reading";
     }
 
-    // 해당 활동 페이지로 이동 (구체 라우트로 연결)
+    // 해당 활동 페이지로 이동
     setTimeout(() => {
       if (activityId === "brain-info" || activityId === "reading") {
         router.push("/brain/learning" as any);
-      } else if (activityId === "brain-math" || activityId === "brain-logic") {
-        router.push("/(tabs)/brain" as any);
+      } else if (activityId === "brain-math") {
+        router.push("/brain/memory" as any);
+      } else if (activityId === "brain-logic") {
+        router.push("/brain/focus" as any);
       } else if (activityId === "meditation") {
         router.push("/meditation" as any);
       }

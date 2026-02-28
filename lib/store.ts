@@ -41,6 +41,7 @@ export interface UserSettings {
   onboardingDone: boolean;
   alertThresholdMinutes?: number; // 알람 임계값 (분)
   manualInputEnabled?: boolean; // 수동 입력 활성화
+  autoDetectionEnabled?: boolean; // 백그라운드 자동 감지
 }
 
 export interface AppState {

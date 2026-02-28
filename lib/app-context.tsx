@@ -143,6 +143,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initializeDetection = async () => {
       try {
+        // pending sessions 로드 완료 후 refreshData 호출
+        realAppDetectionService.setOnSessionsLoaded(refreshData);
         await realAppDetectionService.start();
         console.log("[AppContext] Real app detection started");
         await backgroundTaskService.startMonitoring();
@@ -156,7 +158,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       realAppDetectionService.stop();
       backgroundTaskService.stopMonitoring();
     };
-  }, []);
+  }, [refreshData]);
 
   const addSessionRecord = useCallback(
     async (session: Session) => {
@@ -186,12 +188,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const today = getTodayDateString();
   const todayStats = getPlatformStats(sessions);
   const storedTodayMs = Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0);
-  const currentApp = realAppDetectionService.getCurrentApp();
-  const inProgressValidatedMs =
-    currentApp?.isShortsApp === true
-      ? realAppDetectionService.getValidatedShortsDurationMs()
-      : 0;
-  const todayWatchMs = storedTodayMs + inProgressValidatedMs;
+  const todayWatchMs = storedTodayMs;
 
   return (
     <AppContext.Provider

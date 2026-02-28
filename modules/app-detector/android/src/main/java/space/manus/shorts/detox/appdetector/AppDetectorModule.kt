@@ -1,10 +1,12 @@
-﻿package space.manus.shorts.detox.appdetector
+package space.manus.shorts.detox.appdetector
 
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.Promise
@@ -14,6 +16,7 @@ class AppDetectorModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("AppDetector")
 
+    // ── 현재 포그라운드 앱 조회 ──
     AsyncFunction("getCurrentApp") { promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(null); return@AsyncFunction }
@@ -22,6 +25,7 @@ class AppDetectorModule : Module() {
       } catch (e: Exception) { promise.resolve(null) }
     }
 
+    // ── 사용량 접근 권한 확인 ──
     AsyncFunction("hasUsageStatsPermission") { promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
@@ -29,6 +33,7 @@ class AppDetectorModule : Module() {
       } catch (e: Exception) { promise.resolve(false) }
     }
 
+    // ── 사용량 통계 조회 ──
     AsyncFunction("getUsageStats") { minutes: Int, promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(emptyMap<String, Long>()); return@AsyncFunction }
@@ -37,16 +42,106 @@ class AppDetectorModule : Module() {
       } catch (e: Exception) { promise.resolve(emptyMap<String, Long>()) }
     }
 
+    // ── 앱 이름 조회 ──
     AsyncFunction("getAppName") { packageName: String, promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(packageName); return@AsyncFunction }
-        val pm = ctx.packageManager
         val label = try {
-          val info = pm.getApplicationInfo(packageName, 0)
-          pm.getApplicationLabel(info).toString()
+          val info = ctx.packageManager.getApplicationInfo(packageName, 0)
+          ctx.packageManager.getApplicationLabel(info).toString()
         } catch (e: PackageManager.NameNotFoundException) { packageName }
         promise.resolve(label)
       } catch (e: Exception) { promise.resolve(packageName) }
+    }
+
+    // ── 백그라운드 모니터링 시작 ──
+    AsyncFunction("startBackgroundMonitoring") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val intent = Intent(ctx, AppMonitorService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          ctx.startForegroundService(intent)
+        } else {
+          ctx.startService(intent)
+        }
+        promise.resolve(true)
+      } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── 백그라운드 모니터링 중지 ──
+    AsyncFunction("stopBackgroundMonitoring") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        ctx.stopService(Intent(ctx, AppMonitorService::class.java))
+        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(AppMonitorService.KEY_IS_RUNNING, false).apply()
+        promise.resolve(true)
+      } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── 백그라운드 모니터링 상태 ──
+    AsyncFunction("isBackgroundMonitoringActive") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
+        promise.resolve(prefs.getBoolean(AppMonitorService.KEY_IS_RUNNING, false))
+      } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── 저장된 세션 조회 (JSON string) ──
+    AsyncFunction("getPendingSessions") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve("[]"); return@AsyncFunction }
+        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
+        promise.resolve(prefs.getString(AppMonitorService.KEY_PENDING_SESSIONS, "[]") ?: "[]")
+      } catch (e: Exception) { promise.resolve("[]") }
+    }
+
+    // ── 저장된 세션 초기화 ──
+    AsyncFunction("clearPendingSessions") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(AppMonitorService.KEY_PENDING_SESSIONS, "[]").apply()
+        promise.resolve(true)
+      } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── 사용량 접근 설정 화면 열기 ──
+    AsyncFunction("openUsageStatsSettings") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(intent)
+        promise.resolve(true)
+      } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── 접근성 설정 화면 열기 ──
+    AsyncFunction("openAccessibilitySettings") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(intent)
+        promise.resolve(true)
+      } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── 접근성 서비스 활성화 여부 ──
+    AsyncFunction("isAccessibilityServiceEnabled") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val enabledServices = Settings.Secure.getString(
+          ctx.contentResolver,
+          Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: ""
+        val target = "${ctx.packageName}/${ShortsScrollService::class.java.name}"
+        promise.resolve(enabledServices.contains(target))
+      } catch (e: Exception) { promise.resolve(false) }
     }
   }
 
