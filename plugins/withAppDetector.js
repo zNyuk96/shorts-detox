@@ -1,6 +1,4 @@
-const { withAndroidManifest, withPlugins, withDangerousMod } = require("@expo/config-plugins");
-const fs = require("fs");
-const path = require("path");
+const { withAndroidManifest, withPlugins } = require("@expo/config-plugins");
 
 // ── 1. 권한 + 쿼리 패키지 + 서비스 등록 ──
 const withAndroidConfig = (config) => {
@@ -89,26 +87,4 @@ const withAndroidConfig = (config) => {
   });
 };
 
-// ── 2. Accessibility Service XML 리소스 파일 생성 ──
-const withAccessibilityXml = (config) => {
-  return withDangerousMod(config, [
-    "android",
-    async (mod) => {
-      const xmlDir = path.join(mod.modRequest.platformProjectRoot, "app", "src", "main", "res", "xml");
-      fs.mkdirSync(xmlDir, { recursive: true });
-      const xmlPath = path.join(xmlDir, "shorts_scroll_config.xml");
-      fs.writeFileSync(
-        xmlPath,
-        `<?xml version="1.0" encoding="utf-8"?>\n` +
-        `<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"\n` +
-        `    android:accessibilityEventTypes="typeViewScrolled"\n` +
-        `    android:accessibilityFeedbackType="feedbackGeneric"\n` +
-        `    android:notificationTimeout="300"\n` +
-        `    android:packageNames="com.google.android.youtube,com.zhiliaoapp.musically,com.ss.android.ugc.tiktok,com.instagram.android,com.facebook.katana" />\n`
-      );
-      return mod;
-    },
-  ]);
-};
-
-module.exports = (config) => withPlugins(config, [withAndroidConfig, withAccessibilityXml]);
+module.exports = (config) => withPlugins(config, [withAndroidConfig]);
