@@ -25,7 +25,6 @@ export default function SettingsScreen() {
   const { user, logout } = useAuth();
   const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(false);
   const [hasUsagePermission, setHasUsagePermission] = useState(false);
-  const [hasAccessibility, setHasAccessibility] = useState(false);
 
   useEffect(() => {
     checkPermissionStatus();
@@ -34,13 +33,11 @@ export default function SettingsScreen() {
   const checkPermissionStatus = async () => {
     if (Platform.OS !== "android") return;
     try {
-      const [usage, accessibility, isRunning] = await Promise.all([
+      const [usage, isRunning] = await Promise.all([
         AppDetector.hasUsageStatsPermission(),
-        AppDetector.isAccessibilityServiceEnabled(),
         AppDetector.isBackgroundMonitoringActive(),
       ]);
       setHasUsagePermission(usage);
-      setHasAccessibility(accessibility);
       setAutoDetectionEnabled(isRunning || !!settings.autoDetectionEnabled);
     } catch (e) {}
   };
@@ -50,16 +47,10 @@ export default function SettingsScreen() {
     setTimeout(checkPermissionStatus, 2000);
   };
 
-  const openAccessibilitySettingsScreen = async () => {
-    await AppDetector.openAccessibilitySettings();
-    setTimeout(checkPermissionStatus, 2000);
-  };
-
   const handleAutoDetectionToggle = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!autoDetectionEnabled) {
-      // ── Step 1: 사용량 접근 권한 확인 ──
       const hasUsage = await AppDetector.hasUsageStatsPermission();
       if (!hasUsage) {
         Alert.alert(
@@ -72,32 +63,7 @@ export default function SettingsScreen() {
         );
         return;
       }
-
-      // ── Step 2: 접근성 권한 안내 (스크롤 감지, 선택사항) ──
-      const hasAcc = await AppDetector.isAccessibilityServiceEnabled();
-      setHasAccessibility(hasAcc);
-      if (!hasAcc) {
-        Alert.alert(
-          "스크롤 감지 설정 (선택사항)",
-          "유튜브·인스타·틱톡에서 스크롤 패턴을 감지하면 쇼츠 시청을 더 정확하게 추적할 수 있어요.\n\n설정 → 설치된 앱 → 숏츠 디톡스를 활성화해주세요.",
-          [
-            {
-              text: "건너뛰기",
-              style: "cancel",
-              onPress: () => startMonitoring(),
-            },
-            {
-              text: "설정 열기",
-              onPress: async () => {
-                await openAccessibilitySettingsScreen();
-                startMonitoring();
-              },
-            },
-          ]
-        );
-      } else {
-        await startMonitoring();
-      }
+      await startMonitoring();
     } else {
       // ── 자동 감지 끄기 ──
       await AppDetector.stopBackgroundMonitoring();
@@ -227,12 +193,6 @@ export default function SettingsScreen() {
                 label="사용 앱 접근 (필수)"
                 granted={hasUsagePermission}
                 onPress={openUsageSettings}
-                colors={colors}
-              />
-              <PermissionRow
-                label="스크롤 감지 (선택)"
-                granted={hasAccessibility}
-                onPress={openAccessibilitySettingsScreen}
                 colors={colors}
               />
             </View>

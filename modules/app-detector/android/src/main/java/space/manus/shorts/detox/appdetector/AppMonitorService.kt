@@ -27,11 +27,12 @@ class AppMonitorService : Service() {
         const val KEY_PENDING_SESSIONS = "pendingSessions"
         const val KEY_CURRENT_PKG = "currentPkg"
         const val KEY_SESSION_START = "sessionStart"
-        const val KEY_SCROLL_COUNT = "scrollCount"
         const val KEY_IS_RUNNING = "isRunning"
         const val CHANNEL_ID = "shorts_monitor"
         const val NOTIF_ID = 7001
+        const val MIN_SESSION_MS = 30_000L // 30초 미만 세션 제외
 
+        // 쇼츠 앱 패키지 (사용량 통계 조회 대상)
         val SHORTS_PACKAGES = setOf(
             "com.google.android.youtube",
             "com.zhiliaoapp.musically",
@@ -39,11 +40,17 @@ class AppMonitorService : Service() {
             "com.instagram.android",
             "com.facebook.katana"
         )
+
+        // YouTube에서 쇼츠 탭임을 나타내는 Activity 클래스명 키워드
+        private val YOUTUBE_SHORTS_CLASS_KEYWORDS = listOf(
+            "short", "reel"  // ShortsActivity, ShortsPagerActivity 등 포함
+        )
     }
 
     private var timer: Timer? = null
     private lateinit var prefs: SharedPreferences
     private var currentPkg: String? = null
+    private var currentCls: String? = null  // Activity 클래스명 추적
     private var sessionStartTime = 0L
 
     override fun onCreate() {
@@ -60,7 +67,6 @@ class AppMonitorService : Service() {
             startForeground(NOTIF_ID, notif)
         }
         prefs.edit().putBoolean(KEY_IS_RUNNING, true).apply()
-        // Restore state across restarts
         currentPkg = prefs.getString(KEY_CURRENT_PKG, null)
         sessionStartTime = prefs.getLong(KEY_SESSION_START, 0L)
         startPolling()
@@ -71,25 +77,29 @@ class AppMonitorService : Service() {
         timer?.cancel()
         timer = Timer("AppMonitor", true)
         timer?.scheduleAtFixedRate(object : TimerTask() {
-            override fun run() { try { poll() } catch (_: Exception) {} }
+            override fun run() { try { poll() } catch (e: Exception) {} }
         }, 0L, 2000L)
     }
 
     private fun poll() {
         val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
         val now = System.currentTimeMillis()
-        val pkg = queryForeground(usm, now) ?: return
-        if (pkg == packageName) return // skip our own app
+        val (pkg, cls) = queryForeground(usm, now) ?: return
+        if (pkg == packageName) return
 
-        val isShorts = isShorts(pkg)
-        if (pkg != currentPkg) {
+        val isShortsNow = isShorts(pkg, cls)
+        val changed = pkg != currentPkg || cls != currentCls
+
+        if (changed) {
+            // 이전 세션 저장 (쇼츠였을 경우)
             currentPkg?.let { prev ->
-                if (sessionStartTime > 0L && isShorts(prev)) {
+                if (sessionStartTime > 0L && isShorts(prev, currentCls)) {
                     saveSession(prev, sessionStartTime, now)
                 }
             }
             currentPkg = pkg
-            sessionStartTime = if (isShorts) now else 0L
+            currentCls = cls
+            sessionStartTime = if (isShortsNow) now else 0L
             prefs.edit()
                 .putString(KEY_CURRENT_PKG, pkg)
                 .putLong(KEY_SESSION_START, sessionStartTime)
@@ -97,35 +107,54 @@ class AppMonitorService : Service() {
         }
     }
 
-    private fun queryForeground(usm: UsageStatsManager, now: Long): String? {
-        fun q(begin: Long): String? {
+    // (packageName, className?) 반환
+    private fun queryForeground(usm: UsageStatsManager, now: Long): Pair<String, String?>? {
+        fun q(begin: Long): Pair<String, String?>? {
             val events = usm.queryEvents(begin, now)
             val ev = UsageEvents.Event()
-            var pkg: String? = null; var t = 0L
+            var result: Pair<String, String?>? = null
+            var t = 0L
             while (events.hasNextEvent()) {
                 events.getNextEvent(ev)
                 val fg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
                     ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED
                 else @Suppress("DEPRECATION") ev.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
-                if (fg && ev.timeStamp > t) { t = ev.timeStamp; pkg = ev.packageName }
+                if (fg && ev.timeStamp > t) {
+                    t = ev.timeStamp
+                    result = Pair(ev.packageName, ev.className)
+                }
             }
-            return pkg
+            return result
         }
         return q(now - 10_000L) ?: q(now - 3 * 60_000L)
     }
 
-    private fun isShorts(pkg: String) =
-        SHORTS_PACKAGES.any { pkg == it || pkg.startsWith("$it.") }
+    /**
+     * 쇼츠 여부 판단:
+     * - TikTok: 앱 전체가 쇼츠 형태
+     * - Instagram / Facebook: Reels 중심 (앱 전체 카운트)
+     * - YouTube: Activity 클래스명에 "short" 또는 "reel" 포함 시에만 Shorts 탭
+     */
+    private fun isShorts(pkg: String, cls: String? = null): Boolean {
+        return when {
+            pkg.contains("musically") || pkg.contains("tiktok") -> true
+            pkg == "com.instagram.android" || pkg == "com.facebook.katana" -> true
+            pkg == "com.google.android.youtube" -> {
+                val clsLower = cls?.lowercase() ?: ""
+                YOUTUBE_SHORTS_CLASS_KEYWORDS.any { clsLower.contains(it) }
+            }
+            else -> false
+        }
+    }
 
     private fun saveSession(pkg: String, start: Long, end: Long) {
         val dur = end - start
-        if (dur < 3000L) return
-        val scrollCount = prefs.getInt(KEY_SCROLL_COUNT, 0)
-        prefs.edit().putInt(KEY_SCROLL_COUNT, 0).apply()
+        if (dur < MIN_SESSION_MS) return  // 30초 미만 제외
         val platform = when {
-            pkg.contains("youtube") -> "youtube"
+            pkg == "com.google.android.youtube" -> "youtube"
             pkg.contains("musically") || pkg.contains("tiktok") -> "tiktok"
             pkg.contains("instagram") -> "instagram"
+            pkg.contains("facebook") -> "facebook"
             else -> "other"
         }
         val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(start))
@@ -136,12 +165,12 @@ class AppMonitorService : Service() {
             put("endTime", end)
             put("durationMs", dur)
             put("date", date)
-            put("scrollFrequency", if (scrollCount > 0) scrollCount.toDouble() / (dur / 1000.0) else 0.0)
+            put("scrollFrequency", 0.0)
             put("isAutoDetected", true)
         }
         val arr = try {
             JSONArray(prefs.getString(KEY_PENDING_SESSIONS, "[]") ?: "[]")
-        } catch (_: Exception) { JSONArray() }
+        } catch (e: Exception) { JSONArray() }
         while (arr.length() >= 100) arr.remove(0)
         arr.put(session)
         prefs.edit().putString(KEY_PENDING_SESSIONS, arr.toString()).apply()
@@ -190,7 +219,7 @@ class AppMonitorService : Service() {
         prefs.edit().putBoolean(KEY_IS_RUNNING, false).apply()
         val now = System.currentTimeMillis()
         currentPkg?.let { pkg ->
-            if (sessionStartTime > 0L && isShorts(pkg)) saveSession(pkg, sessionStartTime, now)
+            if (sessionStartTime > 0L && isShorts(pkg, currentCls)) saveSession(pkg, sessionStartTime, now)
         }
     }
 

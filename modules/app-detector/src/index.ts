@@ -12,8 +12,6 @@ const stub: AppDetectorInterface = {
   getPendingSessions: async () => "[]",
   clearPendingSessions: async () => false,
   openUsageStatsSettings: async () => false,
-  openAccessibilitySettings: async () => false,
-  isAccessibilityServiceEnabled: async () => false,
 };
 
 const createAndroidModule = (): AppDetectorInterface => {
@@ -30,8 +28,6 @@ const createAndroidModule = (): AppDetectorInterface => {
     getPendingSessions: () => native.getPendingSessions(),
     clearPendingSessions: () => native.clearPendingSessions(),
     openUsageStatsSettings: () => native.openUsageStatsSettings(),
-    openAccessibilitySettings: () => native.openAccessibilitySettings(),
-    isAccessibilityServiceEnabled: () => native.isAccessibilityServiceEnabled(),
   };
 };
 

@@ -21,7 +21,6 @@ const withAndroidConfig = (config) => {
     addPerm("android.permission.PACKAGE_USAGE_STATS", { "tools:ignore": "ProtectedPermissions" });
     addPerm("android.permission.FOREGROUND_SERVICE");
     addPerm("android.permission.FOREGROUND_SERVICE_DATA_SYNC");
-    addPerm("android.permission.BIND_ACCESSIBILITY_SERVICE");
 
     // queries
     if (!manifest.manifest.queries) manifest.manifest.queries = [{ package: [] }];
@@ -53,33 +52,6 @@ const withAndroidConfig = (config) => {
           "android:foregroundServiceType": "dataSync",
           "android:exported": "false",
         },
-      });
-    }
-
-    // ShortsScrollService (Accessibility Service)
-    if (!hasService("space.manus.shorts.detox.appdetector.ShortsScrollService")) {
-      app.service.push({
-        $: {
-          "android:name": "space.manus.shorts.detox.appdetector.ShortsScrollService",
-          "android:label": "숏츠 스크롤 감지",
-          "android:permission": "android.permission.BIND_ACCESSIBILITY_SERVICE",
-          "android:exported": "true",
-        },
-        "intent-filter": [
-          {
-            action: [
-              { $: { "android:name": "android.accessibilityservice.AccessibilityService" } },
-            ],
-          },
-        ],
-        "meta-data": [
-          {
-            $: {
-              "android:name": "android.accessibilityservice",
-              "android:resource": "@xml/shorts_scroll_config",
-            },
-          },
-        ],
       });
     }
 
