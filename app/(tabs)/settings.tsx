@@ -44,21 +44,23 @@ export default function SettingsScreen() {
     } catch (e) {}
   };
 
-  // 설정 화면에서 돌아왔을 때 권한 확인 후 자동 시작
+  // 앱 포그라운드 복귀 시 항상 권한 상태 갱신 + 대기 중이면 자동 시작
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = AppState.addEventListener("change", async (nextState) => {
-      if (nextState !== "active" || !waitingForPerm.current) return;
-      waitingForPerm.current = false;
+      if (nextState !== "active") return;
       try {
         const hasUsage = await AppDetector.hasUsageStatsPermission();
         setHasUsagePermission(hasUsage);
-        if (hasUsage) {
-          const started = await AppDetector.startBackgroundMonitoring();
-          if (started) {
-            setAutoDetectionEnabled(true);
-            await updateSettings({ autoDetectionEnabled: true });
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (waitingForPerm.current) {
+          waitingForPerm.current = false;
+          if (hasUsage) {
+            const started = await AppDetector.startBackgroundMonitoring();
+            if (started) {
+              setAutoDetectionEnabled(true);
+              await updateSettings({ autoDetectionEnabled: true });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
           }
         }
       } catch {}
@@ -69,7 +71,14 @@ export default function SettingsScreen() {
 
   const openUsageSettings = async () => {
     waitingForPerm.current = true;
-    await AppDetector.openUsageStatsSettings();
+    const success = await AppDetector.openUsageStatsSettings();
+    if (!success) {
+      waitingForPerm.current = false;
+      Alert.alert(
+        "설정을 열 수 없습니다",
+        "직접 '설정 → 앱 → 사용 정보 접근 허용'에서 숏츠 디톡스를 허용해주세요."
+      );
+    }
   };
 
   const handleAutoDetectionToggle = async () => {

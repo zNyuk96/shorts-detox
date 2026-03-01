@@ -147,7 +147,7 @@ export default function HomeScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 설정 화면에서 돌아왔을 때 자동 시작
+  // 설정 화면에서 돌아왔을 때 자동 시작 (waitingForPerm=true인 경우만)
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = AppState.addEventListener("change", async (nextState) => {

@@ -110,11 +110,18 @@ class AppDetectorModule : Module() {
     // ── 사용량 접근 설정 화면 열기 ──
     AsyncFunction("openUsageStatsSettings") { promise: Promise ->
       try {
-        val activity = appContext.currentActivity ?: run { promise.resolve(false); return@AsyncFunction }
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        activity.startActivity(intent)
+        val activity = appContext.currentActivity
+        if (activity != null) {
+          // UI 스레드에서 실행 (AsyncFunction은 백그라운드 스레드)
+          activity.runOnUiThread { activity.startActivity(intent) }
+        } else {
+          // currentActivity null일 때 reactContext 로 fallback
+          val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+          ctx.startActivity(intent)
+        }
         promise.resolve(true)
       } catch (e: Exception) { promise.resolve(false) }
     }
