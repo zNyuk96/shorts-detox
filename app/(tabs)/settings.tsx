@@ -4,9 +4,10 @@ import { useAuth } from "@/hooks/use-auth";
 import { ScreenContainer } from "@/components/screen-container";
 import { formatMinutes } from "@/lib/store";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Alert,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,6 +26,7 @@ export default function SettingsScreen() {
   const { user, logout } = useAuth();
   const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(false);
   const [hasUsagePermission, setHasUsagePermission] = useState(false);
+  const waitingForPerm = useRef(false);
 
   useEffect(() => {
     checkPermissionStatus();
@@ -42,9 +44,32 @@ export default function SettingsScreen() {
     } catch (e) {}
   };
 
+  // 설정 화면에서 돌아왔을 때 권한 확인 후 자동 시작
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const sub = AppState.addEventListener("change", async (nextState) => {
+      if (nextState !== "active" || !waitingForPerm.current) return;
+      waitingForPerm.current = false;
+      try {
+        const hasUsage = await AppDetector.hasUsageStatsPermission();
+        setHasUsagePermission(hasUsage);
+        if (hasUsage) {
+          const started = await AppDetector.startBackgroundMonitoring();
+          if (started) {
+            setAutoDetectionEnabled(true);
+            await updateSettings({ autoDetectionEnabled: true });
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+        }
+      } catch {}
+    });
+    return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const openUsageSettings = async () => {
+    waitingForPerm.current = true;
     await AppDetector.openUsageStatsSettings();
-    setTimeout(checkPermissionStatus, 2000);
   };
 
   const handleAutoDetectionToggle = async () => {

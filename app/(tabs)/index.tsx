@@ -9,13 +9,18 @@ import { ScreenContainer } from "@/components/screen-container";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
 import {
+  Alert,
   Animated,
+  AppState,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppDetector } from "@/modules/app-detector/src";
 import Svg, { Circle } from "react-native-svg";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -92,8 +97,9 @@ const MOTIVATIONAL_MESSAGES = [
 export default function HomeScreen() {
   const colors = useColors();
   const { isAuthenticated, loading: authLoading } = useAuth();
-  const { todayWatchMs, settings, streak, detoxActivities, sessions, testMode } = useAppContext();
+  const { todayWatchMs, settings, streak, detoxActivities, sessions, testMode, updateSettings } = useAppContext();
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const waitingForPerm = useRef(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated && !testMode) {
@@ -103,6 +109,60 @@ export default function HomeScreen() {
 
   useEffect(() => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+  }, []);
+
+  // 첫 실행 시 권한 요청
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    (async () => {
+      try {
+        const prompted = await AsyncStorage.getItem("@shorts_detox/perm_v1");
+        if (prompted) return;
+        await AsyncStorage.setItem("@shorts_detox/perm_v1", "1");
+        const hasUsage = await AppDetector.hasUsageStatsPermission();
+        if (!hasUsage) {
+          Alert.alert(
+            "자동 감지 설정",
+            "숏츠 시청량을 자동 추적하려면 '사용 앱 접근' 권한이 필요합니다.\n\n설정에서 '숏츠 디톡스'를 허용해주세요.",
+            [
+              { text: "나중에", style: "cancel" },
+              {
+                text: "설정 열기",
+                onPress: () => {
+                  waitingForPerm.current = true;
+                  AppDetector.openUsageStatsSettings();
+                },
+              },
+            ]
+          );
+        } else {
+          const running = await AppDetector.isBackgroundMonitoringActive();
+          if (!running) {
+            await AppDetector.startBackgroundMonitoring();
+            await updateSettings({ autoDetectionEnabled: true });
+          }
+        }
+      } catch {}
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 설정 화면에서 돌아왔을 때 자동 시작
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const sub = AppState.addEventListener("change", async (nextState) => {
+      if (nextState !== "active" || !waitingForPerm.current) return;
+      waitingForPerm.current = false;
+      try {
+        const hasUsage = await AppDetector.hasUsageStatsPermission();
+        if (hasUsage) {
+          await AppDetector.startBackgroundMonitoring();
+          await updateSettings({ autoDetectionEnabled: true });
+        }
+      } catch {}
+    });
+    return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 알람 체크: 임계값 초과 시 알림 + 디톡스 페이지 표시
