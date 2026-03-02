@@ -22,13 +22,12 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "space.manus.shorts.detox",
+      "versionCode": 1,
       "permissions": [
         "POST_NOTIFICATIONS",
         "PACKAGE_USAGE_STATS",
-        "BIND_ACCESSIBILITY_SERVICE",
-        "GET_TASKS",
-        "SCHEDULE_EXACT_ALARM",
-        "FOREGROUND_SERVICE"
+        "FOREGROUND_SERVICE",
+        "SCHEDULE_EXACT_ALARM"
       ],
       "intentFilters": [
         {
