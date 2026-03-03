@@ -10,6 +10,7 @@ import { getTodayDateString } from "./store";
 interface AlertState {
   lastAlertTime: number;
   lastAlertWatchMs: number;
+  lastAlertDate: string;
 }
 
 const ALERT_STATE_KEY = "@shorts_detox/alert_state";
@@ -18,6 +19,7 @@ export class NotificationService {
   private alertState: AlertState = {
     lastAlertTime: 0,
     lastAlertWatchMs: 0,
+    lastAlertDate: "",
   };
 
   constructor() {
@@ -85,6 +87,13 @@ export class NotificationService {
   async checkAndSendAlert(currentWatchMs: number, thresholdMinutes: number): Promise<void> {
     const thresholdMs = thresholdMinutes * 60 * 1000;
     const now = Date.now();
+    const today = getTodayDateString();
+
+    // 날짜가 바뀌면 알람 상태 자동 초기화
+    if (this.alertState.lastAlertDate !== today) {
+      await this.resetDailyAlert();
+    }
+
     const timeSinceLastAlert = now - this.alertState.lastAlertTime;
 
     // 임계값을 초과했는지 확인
@@ -94,6 +103,7 @@ export class NotificationService {
         await this.sendAlert(currentWatchMs, thresholdMinutes);
         this.alertState.lastAlertTime = now;
         this.alertState.lastAlertWatchMs = currentWatchMs;
+        this.alertState.lastAlertDate = today;
         await this.saveAlertState();
       }
     }
@@ -135,9 +145,9 @@ export class NotificationService {
     this.alertState = {
       lastAlertTime: 0,
       lastAlertWatchMs: 0,
+      lastAlertDate: getTodayDateString(),
     };
     await this.saveAlertState();
-    console.log("[NotificationService] Daily alert state reset");
   }
 
   /**

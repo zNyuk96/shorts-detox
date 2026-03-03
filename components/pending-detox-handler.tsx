@@ -11,6 +11,14 @@ export function PendingDetoxHandler() {
   const appState = useRef<AppStateStatus>(AppState.currentState);
 
   useEffect(() => {
+    // 앱 최초 시작 시 pending detox 체크 (완전히 종료된 후 재시작 케이스 대응)
+    getPendingDetox().then(async (pending) => {
+      if (pending) {
+        await clearPendingDetox();
+        router.replace(`/detox?watchMs=${pending.watchMs}` as any);
+      }
+    });
+
     const sub = AppState.addEventListener("change", async (nextState: AppStateStatus) => {
       if (appState.current === "background" && nextState === "active") {
         const pending = await getPendingDetox();
