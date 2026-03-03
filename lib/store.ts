@@ -94,6 +94,7 @@ export async function saveSessions(sessions: Session[]): Promise<void> {
 
 export async function addSession(session: Session): Promise<void> {
   const sessions = await loadSessions();
+  if (sessions.some((s) => s.id === session.id)) return;
   sessions.push(session);
   await saveSessions(sessions);
 }
@@ -161,8 +162,11 @@ export async function saveLastActiveDate(date: string): Promise<void> {
 // ─── Date Helpers ─────────────────────────────────────────────────────────────
 
 export function getTodayDateString(): string {
-  const today = new Date();
-  return today.toISOString().split("T")[0];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function getWeeklyStats(sessions: Session[]): Array<{ date: string; totalWatchMs: number }> {

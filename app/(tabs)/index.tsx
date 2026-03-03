@@ -165,7 +165,8 @@ export default function HomeScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 알람 체크: 임계값 초과 시 알림 + 디톡스 페이지 표시
+  // 알람 체크: 임계값 초과 시 알림 발송 + 디톡스 페이지 표시
+  // 알림은 notificationService 단일 경로로만 발송 (5분 중복 방지 내장)
   useEffect(() => {
     const checkAlerts = async () => {
       const thresholdMinutes = settings.alertThresholdMinutes || 30;
@@ -183,14 +184,6 @@ export default function HomeScreen() {
     const interval = setInterval(checkAlerts, 60000);
     return () => clearInterval(interval);
   }, [todayWatchMs, settings.alertThresholdMinutes]);
-
-  // 포그라운드 서비스: 임계값 초과 시 디톡스 페이지 오픈 콜백
-  useEffect(() => {
-    foregroundService.start((watchMs) => {
-      router.replace(`/detox?watchMs=${watchMs}` as any);
-    });
-    return () => foregroundService.stop();
-  }, []);
 
   const goalMs = settings.dailyGoalMinutes * 60 * 1000;
   const progress = goalMs > 0 ? todayWatchMs / goalMs : 0;

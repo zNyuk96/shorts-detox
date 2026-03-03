@@ -186,9 +186,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const today = getTodayDateString();
-  const todayStats = getPlatformStats(sessions);
-  const storedTodayMs = Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0);
-  const todayWatchMs = storedTodayMs;
+  const todayStats = getPlatformStats(sessions.filter((s) => s.date === today));
+  const todayWatchMs = Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0);
 
   return (
     <AppContext.Provider

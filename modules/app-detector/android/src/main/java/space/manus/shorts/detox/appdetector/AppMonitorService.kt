@@ -150,16 +150,16 @@ class AppMonitorService : Service() {
     private fun saveSession(pkg: String, start: Long, end: Long) {
         val dur = end - start
         if (dur < MIN_SESSION_MS) return  // 30초 미만 제외
-        val platform = when {
-            pkg == "com.google.android.youtube" -> "youtube"
-            pkg.contains("musically") || pkg.contains("tiktok") -> "tiktok"
-            pkg.contains("instagram") -> "instagram"
-            pkg.contains("facebook") -> "facebook"
+        val platform = when (pkg) {
+            "com.google.android.youtube" -> "youtube"
+            "com.zhiliaoapp.musically", "com.ss.android.ugc.tiktok" -> "tiktok"
+            "com.instagram.android" -> "instagram"
+            "com.facebook.katana" -> "facebook"
             else -> "other"
         }
         val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(start))
         val session = JSONObject().apply {
-            put("id", "bg-$start")
+            put("id", "bg-${start}-${(Math.random() * 9999).toInt()}")
             put("platform", platform)
             put("startTime", start)
             put("endTime", end)

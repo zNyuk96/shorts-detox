@@ -122,7 +122,7 @@ class BackgroundTaskService {
       const today = getTodayDateString();
 
       const todayMs = sessions
-        .filter((s) => s.date === today && s.isAutoDetected)
+        .filter((s) => s.date === today)
         .reduce((sum, s) => sum + s.durationMs, 0);
 
       return todayMs;
