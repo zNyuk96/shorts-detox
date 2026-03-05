@@ -28,9 +28,16 @@ class AppMonitorService : Service() {
         const val KEY_CURRENT_PKG = "currentPkg"
         const val KEY_SESSION_START = "sessionStart"
         const val KEY_IS_RUNNING = "isRunning"
+        const val KEY_ALERT_THRESHOLD_MS = "alertThresholdMs"
+        const val KEY_TODAY_DATE_ALERT = "todayDateAlert"
+        const val KEY_TODAY_TOTAL_MS = "todayTotalMs"
+        const val KEY_LAST_ALERT_TIME = "lastAlertTime"
         const val CHANNEL_ID = "shorts_monitor"
+        const val ALERT_CHANNEL_ID = "shorts_alert"
         const val NOTIF_ID = 7001
+        const val ALERT_NOTIF_ID = 7002
         const val MIN_SESSION_MS = 30_000L // 30초 미만 세션 제외
+        const val ALERT_MIN_INTERVAL_MS = 5 * 60_000L // 5분 이내 중복 알림 방지
 
         // 쇼츠 앱 패키지 (사용량 통계 조회 대상)
         val SHORTS_PACKAGES = setOf(
@@ -57,6 +64,7 @@ class AppMonitorService : Service() {
         super.onCreate()
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         createNotifChannel()
+        createAlertChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -174,6 +182,73 @@ class AppMonitorService : Service() {
         while (arr.length() >= 100) arr.remove(0)
         arr.put(session)
         prefs.edit().putString(KEY_PENDING_SESSIONS, arr.toString()).apply()
+
+        // 백그라운드에서도 임계값 초과 시 즉시 알림 발송
+        checkAndSendAlertNotification(dur)
+    }
+
+    // ── 백그라운드 알림 임계값 체크 ──
+    private fun checkAndSendAlertNotification(newDurMs: Long) {
+        try {
+            val thresholdMs = prefs.getLong(KEY_ALERT_THRESHOLD_MS, 30 * 60_000L)
+            val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+
+            // 날짜가 바뀌면 누적값 초기화
+            if (prefs.getString(KEY_TODAY_DATE_ALERT, "") != today) {
+                prefs.edit()
+                    .putString(KEY_TODAY_DATE_ALERT, today)
+                    .putLong(KEY_TODAY_TOTAL_MS, 0L)
+                    .putLong(KEY_LAST_ALERT_TIME, 0L)
+                    .apply()
+            }
+
+            val newTotal = prefs.getLong(KEY_TODAY_TOTAL_MS, 0L) + newDurMs
+            prefs.edit().putLong(KEY_TODAY_TOTAL_MS, newTotal).apply()
+
+            if (newTotal < thresholdMs) return
+
+            // 5분 이내 중복 알림 방지
+            val now = System.currentTimeMillis()
+            val lastAlertTime = prefs.getLong(KEY_LAST_ALERT_TIME, 0L)
+            if (now - lastAlertTime < ALERT_MIN_INTERVAL_MS) return
+
+            prefs.edit().putLong(KEY_LAST_ALERT_TIME, now).apply()
+            sendAlertNotification(newTotal, thresholdMs)
+        } catch (e: Exception) {}
+    }
+
+    private fun sendAlertNotification(totalMs: Long, thresholdMs: Long) {
+        val nm = getSystemService(NotificationManager::class.java) ?: return
+        val totalMin = totalMs / 60_000L
+        val thresholdMin = thresholdMs / 60_000L
+
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        val pi = PendingIntent.getActivity(
+            this, 1, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, ALERT_CHANNEL_ID)
+                .setContentTitle("숏츠 디톡스")
+                .setContentText("${totalMin}분 시청했어요! 목표 ${thresholdMin}분 초과. 잠깐 쉬어가세요 🧘")
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("숏츠 디톡스")
+                .setContentText("${totalMin}분 시청했어요! 목표 ${thresholdMin}분 초과. 잠깐 쉬어가세요 🧘")
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .setPriority(Notification.PRIORITY_HIGH)
+                .build()
+        }
+
+        nm.notify(ALERT_NOTIF_ID, notif)
     }
 
     private fun createNotifChannel() {
@@ -181,6 +256,16 @@ class AppMonitorService : Service() {
             val ch = NotificationChannel(CHANNEL_ID, "숏츠 모니터링", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "백그라운드 쇼츠 시청 추적"
                 setShowBadge(false)
+            }
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(ch)
+        }
+    }
+
+    private fun createAlertChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = NotificationChannel(ALERT_CHANNEL_ID, "숏츠 시청 알림", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "쇼츠 시청 시간 초과 알림"
+                setShowBadge(true)
             }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(ch)
         }

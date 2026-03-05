@@ -5,6 +5,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
@@ -97,32 +98,51 @@ class AppDetectorModule : Module() {
       } catch (e: Exception) { promise.resolve("[]") }
     }
 
-    // ── 저장된 세션 초기화 ──
+    // ── 저장된 세션 초기화 (.commit() 으로 동기 쓰기 → 크래시 시 이중 카운팅 방지) ──
     AsyncFunction("clearPendingSessions") { promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
         val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(AppMonitorService.KEY_PENDING_SESSIONS, "[]").apply()
+        val success = prefs.edit().putString(AppMonitorService.KEY_PENDING_SESSIONS, "[]").commit()
+        promise.resolve(success)
+      } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── 알림 임계값 설정 (네이티브 백그라운드 알림용) ──
+    AsyncFunction("setAlertThreshold") { minutes: Int, promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putLong(AppMonitorService.KEY_ALERT_THRESHOLD_MS, minutes * 60_000L).commit()
         promise.resolve(true)
       } catch (e: Exception) { promise.resolve(false) }
     }
 
     // ── 사용량 접근 설정 화면 열기 ──
+    // Fix 1: data = Uri.parse("package:...") 로 앱별 설정 화면으로 직접 딥링크
+    // Fix 2: promise.resolve 를 runOnUiThread 안으로 이동 (타이밍 버그 수정)
+    // Fix 3: activity 경로에서 FLAG_ACTIVITY_NEW_TASK 제거 (Activity context 불필요)
     AsyncFunction("openUsageStatsSettings") { promise: Promise ->
       try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
         val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
-          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          data = Uri.parse("package:${ctx.packageName}")
         }
         val activity = appContext.currentActivity
         if (activity != null) {
           // UI 스레드에서 실행 (AsyncFunction은 백그라운드 스레드)
-          activity.runOnUiThread { activity.startActivity(intent) }
+          activity.runOnUiThread {
+            try {
+              activity.startActivity(intent)
+              promise.resolve(true)
+            } catch (e: Exception) { promise.resolve(false) }
+          }
         } else {
           // currentActivity null일 때 reactContext 로 fallback
-          val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
           ctx.startActivity(intent)
+          promise.resolve(true)
         }
-        promise.resolve(true)
       } catch (e: Exception) { promise.resolve(false) }
     }
 

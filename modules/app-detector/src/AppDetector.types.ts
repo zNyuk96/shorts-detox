@@ -9,4 +9,5 @@ export interface AppDetectorInterface {
   getPendingSessions(): Promise<string>;
   clearPendingSessions(): Promise<boolean>;
   openUsageStatsSettings(): Promise<boolean>;
+  setAlertThreshold(minutes: number): Promise<boolean>;
 }
