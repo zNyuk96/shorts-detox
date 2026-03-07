@@ -119,28 +119,34 @@ class AppDetectorModule : Module() {
     }
 
     // ── 사용량 접근 설정 화면 열기 ──
-    // Fix 1: data = Uri.parse("package:...") 로 앱별 설정 화면으로 직접 딥링크
-    // Fix 2: promise.resolve 를 runOnUiThread 안으로 이동 (타이밍 버그 수정)
-    // Fix 3: activity 경로에서 FLAG_ACTIVITY_NEW_TASK 제거 (Activity context 불필요)
+    // 1차: 앱별 직접 딥링크 (순정 Android 10+)
+    // 2차: 전체 목록 fallback (Samsung 등 OEM은 Uri 무시해 ActivityNotFoundException 발생)
     AsyncFunction("openUsageStatsSettings") { promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
-        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+        val directIntent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
           data = Uri.parse("package:${ctx.packageName}")
         }
+        val listIntent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
         val activity = appContext.currentActivity
         if (activity != null) {
           // UI 스레드에서 실행 (AsyncFunction은 백그라운드 스레드)
           activity.runOnUiThread {
             try {
-              activity.startActivity(intent)
+              activity.startActivity(directIntent)
               promise.resolve(true)
-            } catch (e: Exception) { promise.resolve(false) }
+            } catch (e1: Exception) {
+              // Samsung 등 OEM: Uri 딥링크 미지원 → 전체 목록으로 fallback
+              try {
+                activity.startActivity(listIntent)
+                promise.resolve(true)
+              } catch (e2: Exception) { promise.resolve(false) }
+            }
           }
         } else {
           // currentActivity null일 때 reactContext 로 fallback
-          intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-          ctx.startActivity(intent)
+          listIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          ctx.startActivity(listIntent)
           promise.resolve(true)
         }
       } catch (e: Exception) { promise.resolve(false) }
