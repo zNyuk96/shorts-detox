@@ -64,10 +64,12 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
+    versionCode: 2,
     permissions: [
       "POST_NOTIFICATIONS",
       "PACKAGE_USAGE_STATS",
       "FOREGROUND_SERVICE",
+      "SCHEDULE_EXACT_ALARM",
     ],
     intentFilters: [
       {
@@ -91,19 +93,6 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     "./plugins/withAppDetector",
-    [
-      "expo-audio",
-      {
-        microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
-      },
-    ],
-    [
-      "expo-video",
-      {
-        supportsBackgroundPlayback: true,
-        supportsPictureInPicture: true,
-      },
-    ],
     [
       "expo-splash-screen",
       {
