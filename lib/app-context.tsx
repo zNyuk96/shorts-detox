@@ -63,6 +63,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [scrollMetrics, setScrollMetrics] = useState<ScrollMetrics[]>([]);
   const [platformStats, setPlatformStats] = useState<Record<string, { totalMs: number; sessionCount: number }>>({});
   const [todayAttentionScore, setTodayAttentionScore] = useState<AttentionScore | null>(null);
+  // 현재 진행 중인 쇼츠 세션 (아직 완료 안 됨, 네이티브 서비스에서 30초마다 갱신)
+  const [liveSessionMs, setLiveSessionMs] = useState(0);
 
   // Load testMode from AsyncStorage on mount
   useEffect(() => {
@@ -147,6 +149,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       try {
         // pending sessions 로드 완료 후 refreshData 호출
         realAppDetectionService.setOnSessionsLoaded(refreshData);
+        // 진행 중인 쇼츠 세션 → liveSessionMs 상태 갱신 (30초 폴링)
+        realAppDetectionService.setOnLiveSessionUpdate(setLiveSessionMs);
         await realAppDetectionService.start();
         console.log("[AppContext] Real app detection started");
         await backgroundTaskService.startMonitoring();
@@ -195,7 +199,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const today = getTodayDateString();
   const todayStats = getPlatformStats(sessions.filter((s) => s.date === today));
-  const todayWatchMs = Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0);
+  // liveSessionMs: 현재 진행 중인 세션 (완료 전) - 이중 카운팅 없음 (완료 시 pendingSessions로 전환)
+  const todayWatchMs = Object.values(todayStats).reduce((sum, s) => sum + (s?.totalMs || 0), 0) + liveSessionMs;
 
   return (
     <AppContext.Provider

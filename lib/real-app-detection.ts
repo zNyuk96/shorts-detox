@@ -19,19 +19,20 @@ class RealAppDetectionService {
   private isTracking = false;
   private appStateSubscription: any = null;
   private onSessionsLoaded?: () => void;
+  private onLiveSessionUpdate?: (durationMs: number) => void;
+  private liveSessionInterval: any = null;
 
   async start(): Promise<void> {
     if (this.isTracking) return;
     this.isTracking = true;
 
     if (Platform.OS === "android") {
-      // 앱이 포그라운드로 돌아올 때 pending sessions 로드
       this.appStateSubscription = AppState.addEventListener(
         "change",
         this.handleAppState
       );
-      // 시작 시 기존 pending sessions 로드
       await this.loadPendingSessions();
+      this.startLiveSessionPolling();
     }
   }
 
@@ -40,13 +41,52 @@ class RealAppDetectionService {
     this.isTracking = false;
     this.appStateSubscription?.remove();
     this.appStateSubscription = null;
+    this.stopLiveSessionPolling();
+    this.onLiveSessionUpdate?.(0);
   }
 
   private handleAppState = async (state: AppStateStatus) => {
     if (state === "active") {
       await this.loadPendingSessions();
+      this.startLiveSessionPolling();
+    } else if (state === "background" || state === "inactive") {
+      // 백그라운드 전환 시 폴링 중단 + 라이브 세션 0 리셋
+      this.stopLiveSessionPolling();
+      this.onLiveSessionUpdate?.(0);
     }
   };
+
+  // ── 라이브 세션 폴링 (30초마다, 포그라운드에서만 실행) ──
+  private startLiveSessionPolling() {
+    this.stopLiveSessionPolling();
+    this.checkLiveSession(); // 즉시 1회
+    this.liveSessionInterval = setInterval(() => {
+      this.checkLiveSession();
+    }, 30_000);
+  }
+
+  private stopLiveSessionPolling() {
+    if (this.liveSessionInterval) {
+      clearInterval(this.liveSessionInterval);
+      this.liveSessionInterval = null;
+    }
+  }
+
+  private async checkLiveSession(): Promise<void> {
+    if (Platform.OS !== "android") return;
+    try {
+      const json = await AppDetector.getLiveSession();
+      if (!json) {
+        this.onLiveSessionUpdate?.(0);
+        return;
+      }
+      const live = JSON.parse(json) as { pkg: string; startTime: number };
+      const durationMs = Date.now() - live.startTime;
+      this.onLiveSessionUpdate?.(durationMs > 0 ? durationMs : 0);
+    } catch {
+      this.onLiveSessionUpdate?.(0);
+    }
+  }
 
   async loadPendingSessions(): Promise<void> {
     if (Platform.OS !== "android") return;
@@ -80,7 +120,6 @@ class RealAppDetectionService {
       if (importedCount > 0) {
         const cleared = await AppDetector.clearPendingSessions();
         if (!cleared) {
-          // 다음 포그라운드 때 재시도. addSession 내 dedup 으로 이중 카운팅 방지됨
           console.warn("[RealAppDetection] clearPendingSessions failed, will retry");
         }
         this.onSessionsLoaded?.();
@@ -92,6 +131,10 @@ class RealAppDetectionService {
 
   setOnSessionsLoaded(cb: () => void) {
     this.onSessionsLoaded = cb;
+  }
+
+  setOnLiveSessionUpdate(cb: (durationMs: number) => void) {
+    this.onLiveSessionUpdate = cb;
   }
 
   isRunning() { return this.isTracking; }

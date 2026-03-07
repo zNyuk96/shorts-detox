@@ -13,6 +13,7 @@ const stub: AppDetectorInterface = {
   clearPendingSessions: async () => false,
   openUsageStatsSettings: async () => false,
   setAlertThreshold: async () => false,
+  getLiveSession: async () => null,
 };
 
 const createAndroidModule = (): AppDetectorInterface => {
@@ -30,6 +31,7 @@ const createAndroidModule = (): AppDetectorInterface => {
     clearPendingSessions: () => native.clearPendingSessions(),
     openUsageStatsSettings: () => native.openUsageStatsSettings(),
     setAlertThreshold: (minutes: number) => native.setAlertThreshold(minutes),
+    getLiveSession: () => native.getLiveSession(),
   };
 };
 

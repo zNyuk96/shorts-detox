@@ -89,6 +89,25 @@ class AppDetectorModule : Module() {
       } catch (e: Exception) { promise.resolve(false) }
     }
 
+    // ── 현재 진행 중인 쇼츠 세션 조회 (JSON string | null) ──
+    // KEY_SESSION_START > 0 이면 현재 쇼츠 앱 시청 중 (poll()에서 isShortsNow일 때만 non-zero)
+    AsyncFunction("getLiveSession") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(null); return@AsyncFunction }
+        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
+        val isRunning = prefs.getBoolean(AppMonitorService.KEY_IS_RUNNING, false)
+        if (!isRunning) { promise.resolve(null); return@AsyncFunction }
+        val pkg = prefs.getString(AppMonitorService.KEY_CURRENT_PKG, null)
+        val start = prefs.getLong(AppMonitorService.KEY_SESSION_START, 0L)
+        if (pkg == null || start == 0L) { promise.resolve(null); return@AsyncFunction }
+        val json = org.json.JSONObject().apply {
+          put("pkg", pkg)
+          put("startTime", start)
+        }
+        promise.resolve(json.toString())
+      } catch (e: Exception) { promise.resolve(null) }
+    }
+
     // ── 저장된 세션 조회 (JSON string) ──
     AsyncFunction("getPendingSessions") { promise: Promise ->
       try {
