@@ -21,6 +21,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppDetector } from "@/modules/app-detector/src";
+import { debugLogger } from "@/lib/debug-logger";
 import Svg, { Circle } from "react-native-svg";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -111,15 +112,33 @@ export default function HomeScreen() {
     Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
+  // 앱 시작 시 진단 로그 자동 기록
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    (async () => {
+      try {
+        const diagJson = await AppDetector.getPermissionDiagnostics();
+        const d = JSON.parse(diagJson);
+        debugLogger.log("DIAG", `[홈] ctx=${d.reactContextNull ? "NULL" : "OK"} activity=${d.currentActivityNull ? "NULL" : "OK"} appOps=${d.appOpsModeLabel} usageCount=${d.usageStatsCount} perm=${d.hasPermResult} svc=${d.svcRunning} settingsOK=${d.settingsResolvable}`);
+      } catch (e) {
+        debugLogger.log("DIAG", `[홈] 진단 실패: ${e}`);
+      }
+    })();
+  }, []);
+
   // 첫 실행 시 권한 요청
   useEffect(() => {
     if (Platform.OS !== "android") return;
     (async () => {
       try {
         const prompted = await AsyncStorage.getItem("@shorts_detox/perm_v1");
-        if (prompted) return;
+        if (prompted) {
+          debugLogger.log("PERM", "첫 실행 프롬프트 이미 완료, 스킵");
+          return;
+        }
         await AsyncStorage.setItem("@shorts_detox/perm_v1", "1");
         const hasUsage = await AppDetector.hasUsageStatsPermission();
+        debugLogger.log("PERM", `첫 실행 권한 확인: ${hasUsage}`);
         if (!hasUsage) {
           Alert.alert(
             "자동 감지 설정",
@@ -137,29 +156,50 @@ export default function HomeScreen() {
           );
         } else {
           const running = await AppDetector.isBackgroundMonitoringActive();
+          debugLogger.log("SVC", `첫 실행 서비스 상태: running=${running}`);
           if (!running) {
-            await AppDetector.startBackgroundMonitoring();
-            await updateSettings({ autoDetectionEnabled: true });
+            const started = await AppDetector.startBackgroundMonitoring();
+            debugLogger.log("SVC", `첫 실행 서비스 시작: ${started}`);
+            if (started) await updateSettings({ autoDetectionEnabled: true });
           }
         }
-      } catch {}
+      } catch (e) {
+        debugLogger.log("PERM", `첫 실행 에러: ${e}`);
+      }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 설정 화면에서 돌아왔을 때 자동 시작 (waitingForPerm=true인 경우만)
+  // 앱 포그라운드 복귀 시 항상 권한 체크 + 서비스 자동 시작 (Fix 1+3)
+  // waitingForPerm 의존 제거 → "나중에" 후 수동 권한 설정도 감지
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const sub = AppState.addEventListener("change", async (nextState) => {
-      if (nextState !== "active" || !waitingForPerm.current) return;
-      waitingForPerm.current = false;
+      if (nextState !== "active") return;
       try {
-        const hasUsage = await AppDetector.hasUsageStatsPermission();
-        if (hasUsage) {
-          await AppDetector.startBackgroundMonitoring();
-          await updateSettings({ autoDetectionEnabled: true });
+        let hasUsage = await AppDetector.hasUsageStatsPermission();
+        debugLogger.log("PERM", `홈 active 복귀 → 권한: ${hasUsage}`);
+
+        // Fix 4: 타이밍 이슈 - 설정 직후 빠른 복귀 시 권한 반영 지연 대응
+        if (!hasUsage && waitingForPerm.current) {
+          debugLogger.log("RETRY", "500ms 후 권한 재확인 시도");
+          await new Promise((r) => setTimeout(r, 500));
+          hasUsage = await AppDetector.hasUsageStatsPermission();
+          debugLogger.log("RETRY", `재시도 결과: ${hasUsage}`);
         }
-      } catch {}
+        waitingForPerm.current = false;
+
+        if (hasUsage) {
+          const running = await AppDetector.isBackgroundMonitoringActive();
+          if (!running) {
+            const started = await AppDetector.startBackgroundMonitoring();
+            debugLogger.log("SVC", `홈 active → 서비스 자동시작: ${started}`);
+            if (started) await updateSettings({ autoDetectionEnabled: true });
+          }
+        }
+      } catch (e) {
+        debugLogger.log("PERM", `홈 active 에러: ${e}`);
+      }
     });
     return () => sub.remove();
   // eslint-disable-next-line react-hooks/exhaustive-deps

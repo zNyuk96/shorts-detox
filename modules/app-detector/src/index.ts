@@ -1,4 +1,5 @@
-import { NativeModules, Platform } from "react-native";
+import { requireNativeModule } from "expo-modules-core";
+import { Platform } from "react-native";
 import type { AppDetectorInterface } from "./AppDetector.types";
 
 const stub: AppDetectorInterface = {
@@ -14,25 +15,31 @@ const stub: AppDetectorInterface = {
   openUsageStatsSettings: async () => false,
   setAlertThreshold: async () => false,
   getLiveSession: async () => null,
+  getPermissionDiagnostics: async () => "{}",
 };
 
 const createAndroidModule = (): AppDetectorInterface => {
-  const native = NativeModules.AppDetector;
-  if (!native) { if (__DEV__) console.warn("[AppDetector] Native module not found. Run prebuild + dev build."); return stub; }
-  return {
-    getCurrentApp: () => native.getCurrentApp(),
-    hasUsageStatsPermission: () => native.hasUsageStatsPermission(),
-    getUsageStats: (minutes: number) => native.getUsageStats(minutes),
-    getAppName: (packageName: string) => native.getAppName(packageName),
-    startBackgroundMonitoring: () => native.startBackgroundMonitoring(),
-    stopBackgroundMonitoring: () => native.stopBackgroundMonitoring(),
-    isBackgroundMonitoringActive: () => native.isBackgroundMonitoringActive(),
-    getPendingSessions: () => native.getPendingSessions(),
-    clearPendingSessions: () => native.clearPendingSessions(),
-    openUsageStatsSettings: () => native.openUsageStatsSettings(),
-    setAlertThreshold: (minutes: number) => native.setAlertThreshold(minutes),
-    getLiveSession: () => native.getLiveSession(),
-  };
+  try {
+    const native = requireNativeModule("AppDetector");
+    return {
+      getCurrentApp: () => native.getCurrentApp(),
+      hasUsageStatsPermission: () => native.hasUsageStatsPermission(),
+      getUsageStats: (minutes: number) => native.getUsageStats(minutes),
+      getAppName: (packageName: string) => native.getAppName(packageName),
+      startBackgroundMonitoring: () => native.startBackgroundMonitoring(),
+      stopBackgroundMonitoring: () => native.stopBackgroundMonitoring(),
+      isBackgroundMonitoringActive: () => native.isBackgroundMonitoringActive(),
+      getPendingSessions: () => native.getPendingSessions(),
+      clearPendingSessions: () => native.clearPendingSessions(),
+      openUsageStatsSettings: () => native.openUsageStatsSettings(),
+      setAlertThreshold: (minutes: number) => native.setAlertThreshold(minutes),
+      getLiveSession: () => native.getLiveSession(),
+      getPermissionDiagnostics: () => native.getPermissionDiagnostics(),
+    };
+  } catch (e) {
+    if (__DEV__) console.warn("[AppDetector] Native module not found. Run prebuild + dev build.", e);
+    return stub;
+  }
 };
 
 export const AppDetector: AppDetectorInterface =

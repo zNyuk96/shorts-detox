@@ -3,11 +3,13 @@ import { useColors } from "@/hooks/use-colors";
 import { useAuth } from "@/hooks/use-auth";
 import { ScreenContainer } from "@/components/screen-container";
 import { formatMinutes } from "@/lib/store";
+import { debugLogger } from "@/lib/debug-logger";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
   AppState,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +17,7 @@ import {
   View,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import * as Clipboard from "expo-clipboard";
 import { AppDetector } from "@/modules/app-detector/src";
 import { Platform } from "react-native";
 
@@ -27,6 +30,8 @@ export default function SettingsScreen() {
   const [autoDetectionEnabled, setAutoDetectionEnabled] = useState(false);
   const [hasUsagePermission, setHasUsagePermission] = useState(false);
   const waitingForPerm = useRef(false);
+  const [debugModalVisible, setDebugModalVisible] = useState(false);
+  const [debugLogs, setDebugLogs] = useState("");
 
   useEffect(() => {
     checkPermissionStatus();
@@ -41,7 +46,41 @@ export default function SettingsScreen() {
       ]);
       setHasUsagePermission(usage);
       setAutoDetectionEnabled(isRunning || !!settings.autoDetectionEnabled);
-    } catch (e) {}
+      debugLogger.log("PERM", `설정화면 mount → 권한: ${usage}, 서비스: ${isRunning}`);
+
+      // 자동 진단 실행
+      await runDiagnostics();
+    } catch (e) {
+      debugLogger.log("PERM", `설정화면 mount 에러: ${e}`);
+    }
+  };
+
+  const runDiagnostics = async () => {
+    if (Platform.OS !== "android") return;
+    try {
+      const diagJson = await AppDetector.getPermissionDiagnostics();
+      const diag = JSON.parse(diagJson);
+      debugLogger.log("DIAG", "=== 진단 시작 ===");
+      debugLogger.log("DIAG", `reactContext: ${diag.reactContextNull ? "NULL!" : "OK"}`);
+      debugLogger.log("DIAG", `pkg: ${diag.packageName}`);
+      debugLogger.log("DIAG", `SDK: ${diag.sdkVersion}, ${diag.manufacturer} ${diag.model}`);
+      debugLogger.log("DIAG", `activity: ${diag.currentActivityNull ? "NULL!" : `OK (${diag.activityClass})`}`);
+      debugLogger.log("DIAG", `AppOps mode: ${diag.appOpsModeLabel} (raw=${diag.appOpsMode}), uid=${diag.uid}`);
+      debugLogger.log("DIAG", `UsageStats: null=${diag.usageStatsNull}, count=${diag.usageStatsCount}`);
+      if (diag.usageStatsSample) debugLogger.log("DIAG", `  sample: ${diag.usageStatsSample}`);
+      if (diag.usageStatsError) debugLogger.log("DIAG", `  ERROR: ${diag.usageStatsError}`);
+      debugLogger.log("DIAG", `recentEvents(1min): ${diag.recentEventsCount ?? diag.recentEventsError}`);
+      debugLogger.log("DIAG", `hasPermResult: ${diag.hasPermResult}`);
+      debugLogger.log("DIAG", `svc running: ${diag.svcRunning}, pkg: ${diag.svcPkg}`);
+      debugLogger.log("DIAG", `settings resolvable: ${diag.settingsResolvable}`);
+      if (diag.settingsTarget) debugLogger.log("DIAG", `  target: ${diag.settingsTarget}`);
+      if (diag.settingsResolveError) debugLogger.log("DIAG", `  ERROR: ${diag.settingsResolveError}`);
+      if (diag.appOpsError) debugLogger.log("DIAG", `AppOps ERROR: ${diag.appOpsError}`);
+      if (diag.fatalError) debugLogger.log("DIAG", `FATAL: ${diag.fatalError}`);
+      debugLogger.log("DIAG", "=== 진단 완료 ===");
+    } catch (e) {
+      debugLogger.log("DIAG", `진단 실패: ${e}`);
+    }
   };
 
   // 앱 포그라운드 복귀 시 항상 권한 상태 갱신 + 대기 중이면 자동 시작
@@ -50,12 +89,23 @@ export default function SettingsScreen() {
     const sub = AppState.addEventListener("change", async (nextState) => {
       if (nextState !== "active") return;
       try {
-        const hasUsage = await AppDetector.hasUsageStatsPermission();
+        let hasUsage = await AppDetector.hasUsageStatsPermission();
+        debugLogger.log("PERM", `설정화면 active → 권한: ${hasUsage}`);
         setHasUsagePermission(hasUsage);
+
         if (waitingForPerm.current) {
+          // Fix 4: 타이밍 이슈 - 설정 직후 빠른 복귀 시 권한 반영 지연
+          if (!hasUsage) {
+            debugLogger.log("RETRY", "설정화면 500ms 후 권한 재확인");
+            await new Promise((r) => setTimeout(r, 500));
+            hasUsage = await AppDetector.hasUsageStatsPermission();
+            debugLogger.log("RETRY", `설정화면 재시도 결과: ${hasUsage}`);
+            setHasUsagePermission(hasUsage);
+          }
           waitingForPerm.current = false;
           if (hasUsage) {
             const started = await AppDetector.startBackgroundMonitoring();
+            debugLogger.log("SVC", `설정화면 서비스 시작: ${started}`);
             if (started) {
               setAutoDetectionEnabled(true);
               await updateSettings({ autoDetectionEnabled: true });
@@ -63,7 +113,9 @@ export default function SettingsScreen() {
             }
           }
         }
-      } catch {}
+      } catch (e) {
+        debugLogger.log("PERM", `설정화면 active 에러: ${e}`);
+      }
     });
     return () => sub.remove();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -71,7 +123,9 @@ export default function SettingsScreen() {
 
   const openUsageSettings = async () => {
     waitingForPerm.current = true;
+    debugLogger.log("PERM", "설정 앱 열기 시도");
     const success = await AppDetector.openUsageStatsSettings();
+    debugLogger.log("PERM", `설정 앱 열기 결과: ${success}`);
     if (!success) {
       waitingForPerm.current = false;
       Alert.alert(
@@ -86,6 +140,7 @@ export default function SettingsScreen() {
 
     if (!autoDetectionEnabled) {
       const hasUsage = await AppDetector.hasUsageStatsPermission();
+      debugLogger.log("PERM", `자동감지 토글 ON → 권한: ${hasUsage}`);
       if (!hasUsage) {
         Alert.alert(
           "사용 앱 접근 권한 필요",
@@ -103,11 +158,13 @@ export default function SettingsScreen() {
       await AppDetector.stopBackgroundMonitoring();
       setAutoDetectionEnabled(false);
       await updateSettings({ autoDetectionEnabled: false });
+      debugLogger.log("SVC", "자동감지 OFF → 서비스 중지");
     }
   };
 
   const startMonitoring = async () => {
     const started = await AppDetector.startBackgroundMonitoring();
+    debugLogger.log("SVC", `startMonitoring 결과: ${started}`);
     if (started) {
       setAutoDetectionEnabled(true);
       await updateSettings({ autoDetectionEnabled: true });
@@ -129,6 +186,16 @@ export default function SettingsScreen() {
         },
       },
     ]);
+  };
+
+  const openDebugModal = () => {
+    setDebugLogs(debugLogger.getLogs());
+    setDebugModalVisible(true);
+  };
+
+  const copyDebugLogs = async () => {
+    await Clipboard.setStringAsync(debugLogs);
+    Alert.alert("복사 완료", "디버그 로그가 클립보드에 복사되었습니다.");
   };
 
   return (
@@ -282,6 +349,31 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Debug Buttons */}
+        <View style={styles.debugBtnRow}>
+          <Pressable
+            onPress={openDebugModal}
+            style={({ pressed }) => [
+              styles.debugBtn,
+              { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <Text style={[styles.debugBtnText, { color: colors.muted }]}>🔧 디버그 로그</Text>
+          </Pressable>
+          <Pressable
+            onPress={async () => {
+              await runDiagnostics();
+              openDebugModal();
+            }}
+            style={({ pressed }) => [
+              styles.debugBtn,
+              { flex: 1, backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <Text style={[styles.debugBtnText, { color: colors.muted }]}>🔍 진단 실행</Text>
+          </Pressable>
+        </View>
+
         {/* Logout */}
         <Pressable
           onPress={handleLogout}
@@ -293,6 +385,37 @@ export default function SettingsScreen() {
           <Text style={[styles.logoutText, { color: colors.error }]}>로그아웃</Text>
         </Pressable>
       </ScrollView>
+
+      {/* Debug Modal */}
+      <Modal visible={debugModalVisible} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.debugModal, { backgroundColor: colors.background }]}>
+          <View style={styles.debugHeader}>
+            <Text style={[styles.debugTitle, { color: colors.foreground }]}>디버그 로그</Text>
+            <View style={styles.debugActions}>
+              <Pressable onPress={copyDebugLogs} style={[styles.debugActionBtn, { backgroundColor: colors.primary }]}>
+                <Text style={styles.debugActionText}>복사</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  debugLogger.clear();
+                  setDebugLogs("(로그 없음)");
+                }}
+                style={[styles.debugActionBtn, { backgroundColor: colors.warning }]}
+              >
+                <Text style={styles.debugActionText}>초기화</Text>
+              </Pressable>
+              <Pressable onPress={() => setDebugModalVisible(false)} style={[styles.debugActionBtn, { backgroundColor: colors.muted }]}>
+                <Text style={styles.debugActionText}>닫기</Text>
+              </Pressable>
+            </View>
+          </View>
+          <ScrollView style={styles.debugLogScroll} contentContainerStyle={styles.debugLogContent}>
+            <Text style={[styles.debugLogText, { color: colors.foreground }]} selectable>
+              {debugLogs}
+            </Text>
+          </ScrollView>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -465,6 +588,20 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
   },
+  debugBtnRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  debugBtn: {
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  debugBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
   logoutBtn: {
     paddingVertical: 16,
     borderRadius: 16,
@@ -474,5 +611,45 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  debugModal: {
+    flex: 1,
+    paddingTop: 16,
+  },
+  debugHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  debugTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  debugActions: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  debugActionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  debugActionText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  debugLogScroll: {
+    flex: 1,
+  },
+  debugLogContent: {
+    padding: 16,
+  },
+  debugLogText: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 11,
+    lineHeight: 18,
   },
 });

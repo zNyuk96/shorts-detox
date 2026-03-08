@@ -11,4 +11,5 @@ export interface AppDetectorInterface {
   openUsageStatsSettings(): Promise<boolean>;
   setAlertThreshold(minutes: number): Promise<boolean>;
   getLiveSession(): Promise<string | null>; // JSON: { pkg: string, startTime: number } | null
+  getPermissionDiagnostics(): Promise<string>; // JSON diagnostics
 }

@@ -1,6 +1,7 @@
-import { Platform, AppState, AppStateStatus } from "react-native";
-import { addSession, getTodayDateString } from "./store";
+import { Platform, AppState, AppStateStatus, NativeEventSubscription } from "react-native";
+import { addSession, getTodayDateString, isValidDateString } from "./store";
 import { AppDetector } from "../modules/app-detector/src";
+import { debugLogger } from "./debug-logger";
 
 export interface CurrentAppInfo {
   appId: string;
@@ -9,18 +10,19 @@ export interface CurrentAppInfo {
   timestamp: number;
 }
 
-function isValidDateString(date: unknown): date is string {
-  if (typeof date !== "string") return false;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
-  return !isNaN(new Date(date).getTime());
+// Kotlin(AppMonitorService)과 동일하게 로컬 타임존 기준으로 날짜 문자열 생성
+function toLocalDateString(timestamp: number): string {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 class RealAppDetectionService {
   private isTracking = false;
-  private appStateSubscription: any = null;
+  private appStateSubscription: NativeEventSubscription | null = null;
   private onSessionsLoaded?: () => void;
   private onLiveSessionUpdate?: (durationMs: number) => void;
-  private liveSessionInterval: any = null;
+  private liveSessionInterval: ReturnType<typeof setInterval> | null = null;
+  private isLoadingPending = false;
 
   async start(): Promise<void> {
     if (this.isTracking) return;
@@ -47,10 +49,19 @@ class RealAppDetectionService {
 
   private handleAppState = async (state: AppStateStatus) => {
     if (state === "active") {
-      await this.loadPendingSessions();
+      // 동시에 여러 loadPendingSessions() 호출 방지
+      if (!this.isLoadingPending) {
+        this.isLoadingPending = true;
+        try {
+          await this.loadPendingSessions();
+        } catch (e) {
+          console.warn("[RealAppDetection] handleAppState load error:", e);
+        } finally {
+          this.isLoadingPending = false;
+        }
+      }
       this.startLiveSessionPolling();
     } else if (state === "background" || state === "inactive") {
-      // 백그라운드 전환 시 폴링 중단 + 라이브 세션 0 리셋
       this.stopLiveSessionPolling();
       this.onLiveSessionUpdate?.(0);
     }
@@ -59,9 +70,9 @@ class RealAppDetectionService {
   // ── 라이브 세션 폴링 (30초마다, 포그라운드에서만 실행) ──
   private startLiveSessionPolling() {
     this.stopLiveSessionPolling();
-    this.checkLiveSession(); // 즉시 1회
+    void this.checkLiveSession(); // 즉시 1회 (fire-and-forget)
     this.liveSessionInterval = setInterval(() => {
-      this.checkLiveSession();
+      void this.checkLiveSession();
     }, 30_000);
   }
 
@@ -82,6 +93,7 @@ class RealAppDetectionService {
       }
       const live = JSON.parse(json) as { pkg: string; startTime: number };
       const durationMs = Date.now() - live.startTime;
+      debugLogger.log("LIVE", `pkg=${live.pkg} dur=${Math.round(durationMs / 1000)}s`);
       this.onLiveSessionUpdate?.(durationMs > 0 ? durationMs : 0);
     } catch {
       this.onLiveSessionUpdate?.(0);
@@ -93,16 +105,19 @@ class RealAppDetectionService {
     try {
       const json = await AppDetector.getPendingSessions();
       const sessions: any[] = JSON.parse(json);
-      if (!Array.isArray(sessions) || sessions.length === 0) return;
+      if (!Array.isArray(sessions) || sessions.length === 0) {
+        debugLogger.log("PENDING", "pendingSessions: 0건");
+        return;
+      }
 
       let importedCount = 0;
       for (const s of sessions) {
         if (!s.id || !s.durationMs || s.durationMs < 3000) continue;
-        // startTime 으로 날짜 재계산 (date 필드 유실/오류 방어)
+        // Kotlin과 동일하게 로컬 타임존 기준 날짜 계산 (date 필드 유실/오류 방어)
         const date = isValidDateString(s.date)
           ? s.date
           : s.startTime
-            ? new Date(s.startTime).toISOString().split("T")[0]
+            ? toLocalDateString(s.startTime)
             : getTodayDateString();
         await addSession({
           id: s.id,
@@ -117,6 +132,7 @@ class RealAppDetectionService {
         importedCount++;
       }
 
+      debugLogger.log("PENDING", `pendingSessions 로드: ${importedCount}/${sessions.length}건`);
       if (importedCount > 0) {
         const cleared = await AppDetector.clearPendingSessions();
         if (!cleared) {

@@ -188,32 +188,28 @@ class AppMonitorService : Service() {
     }
 
     // ── 백그라운드 알림 임계값 체크 ──
+    @Synchronized
     private fun checkAndSendAlertNotification(newDurMs: Long) {
         try {
             val thresholdMs = prefs.getLong(KEY_ALERT_THRESHOLD_MS, 30 * 60_000L)
             val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-
-            // 날짜가 바뀌면 누적값 초기화
-            if (prefs.getString(KEY_TODAY_DATE_ALERT, "") != today) {
-                prefs.edit()
-                    .putString(KEY_TODAY_DATE_ALERT, today)
-                    .putLong(KEY_TODAY_TOTAL_MS, 0L)
-                    .putLong(KEY_LAST_ALERT_TIME, 0L)
-                    .apply()
-            }
-
-            val newTotal = prefs.getLong(KEY_TODAY_TOTAL_MS, 0L) + newDurMs
-            prefs.edit().putLong(KEY_TODAY_TOTAL_MS, newTotal).apply()
-
-            if (newTotal < thresholdMs) return
-
-            // 5분 이내 중복 알림 방지
             val now = System.currentTimeMillis()
-            val lastAlertTime = prefs.getLong(KEY_LAST_ALERT_TIME, 0L)
-            if (now - lastAlertTime < ALERT_MIN_INTERVAL_MS) return
 
-            prefs.edit().putLong(KEY_LAST_ALERT_TIME, now).apply()
-            sendAlertNotification(newTotal, thresholdMs)
+            val currentDate = prefs.getString(KEY_TODAY_DATE_ALERT, "")
+            val currentTotal = if (currentDate == today) prefs.getLong(KEY_TODAY_TOTAL_MS, 0L) else 0L
+            val lastAlertTime = if (currentDate == today) prefs.getLong(KEY_LAST_ALERT_TIME, 0L) else 0L
+            val newTotal = currentTotal + newDurMs
+
+            val shouldAlert = newTotal >= thresholdMs && (now - lastAlertTime >= ALERT_MIN_INTERVAL_MS)
+
+            // 단일 트랜잭션으로 모든 값 저장
+            val editor = prefs.edit()
+                .putString(KEY_TODAY_DATE_ALERT, today)
+                .putLong(KEY_TODAY_TOTAL_MS, newTotal)
+            if (shouldAlert) editor.putLong(KEY_LAST_ALERT_TIME, now)
+            editor.apply()
+
+            if (shouldAlert) sendAlertNotification(newTotal, thresholdMs)
         } catch (e: Exception) {}
     }
 

@@ -194,7 +194,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // 설정 변경 시 네이티브 서비스의 알림 임계값 동기화
   useEffect(() => {
     if (Platform.OS !== "android") return;
-    AppDetector.setAlertThreshold(settings.alertThresholdMinutes || 30).catch(() => {});
+    AppDetector.setAlertThreshold(settings.alertThresholdMinutes ?? 30).catch(() => {});
   }, [settings.alertThresholdMinutes]);
 
   const today = getTodayDateString();
