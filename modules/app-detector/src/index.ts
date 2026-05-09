@@ -12,10 +12,15 @@ const stub: AppDetectorInterface = {
   isBackgroundMonitoringActive: async () => false,
   getPendingSessions: async () => "[]",
   clearPendingSessions: async () => false,
+  getSessionsByDate: async () => "[]",
+  getTotalDurationMs: async () => 0,
   openUsageStatsSettings: async () => false,
   setAlertThreshold: async () => false,
   getLiveSession: async () => null,
   getPermissionDiagnostics: async () => "{}",
+  startVpnBlocking: async () => false,
+  stopVpnBlocking: async () => false,
+  isVpnActive: async () => false,
 };
 
 const createAndroidModule = (): AppDetectorInterface => {
@@ -31,10 +36,15 @@ const createAndroidModule = (): AppDetectorInterface => {
       isBackgroundMonitoringActive: () => native.isBackgroundMonitoringActive(),
       getPendingSessions: () => native.getPendingSessions(),
       clearPendingSessions: () => native.clearPendingSessions(),
+      getSessionsByDate: (date: string) => native.getSessionsByDate(date),
+      getTotalDurationMs: (pkg: string, date: string) => native.getTotalDurationMs(pkg, date),
       openUsageStatsSettings: () => native.openUsageStatsSettings(),
       setAlertThreshold: (minutes: number) => native.setAlertThreshold(minutes),
       getLiveSession: () => native.getLiveSession(),
       getPermissionDiagnostics: () => native.getPermissionDiagnostics(),
+      startVpnBlocking: () => native.startVpnBlocking(),
+      stopVpnBlocking: () => native.stopVpnBlocking(),
+      isVpnActive: () => native.isVpnActive(),
     };
   } catch (e) {
     if (__DEV__) console.warn("[AppDetector] Native module not found. Run prebuild + dev build.", e);

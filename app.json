@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "space.manus.shorts.detox"
+      "bundleIdentifier": "com.shortsdetox"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +21,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "space.manus.shorts.detox",
+      "package": "com.shortsdetox",
       "versionCode": 2,
       "permissions": [
         "POST_NOTIFICATIONS",

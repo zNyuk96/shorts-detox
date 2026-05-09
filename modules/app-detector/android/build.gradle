@@ -1,10 +1,18 @@
 apply plugin: 'com.android.library'
 apply plugin: 'expo-module-gradle-plugin'
+apply plugin: 'com.google.devtools.ksp'
 
 expoModule {
   canBePublished false
 }
 
 android {
-  namespace "space.manus.shorts.detox.appdetector"
+  namespace "com.shortsdetox.appdetector"
+}
+
+dependencies {
+  def room_version = "2.6.1"
+  implementation "androidx.room:room-runtime:$room_version"
+  implementation "androidx.room:room-ktx:$room_version"
+  ksp "androidx.room:room-compiler:$room_version"
 }

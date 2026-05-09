@@ -1,4 +1,4 @@
-package space.manus.shorts.detox.appdetector
+package com.shortsdetox.appdetector
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -12,19 +12,25 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.IBinder
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import com.shortsdetox.appdetector.db.AppDatabase
+import com.shortsdetox.appdetector.db.AppSessionEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.Timer
 import java.util.TimerTask
 
+
+
 class AppMonitorService : Service() {
 
     companion object {
         const val PREFS_NAME = "AppDetectorPrefs"
-        const val KEY_PENDING_SESSIONS = "pendingSessions"
         const val KEY_CURRENT_PKG = "currentPkg"
         const val KEY_SESSION_START = "sessionStart"
         const val KEY_IS_RUNNING = "isRunning"
@@ -48,17 +54,14 @@ class AppMonitorService : Service() {
             "com.facebook.katana"
         )
 
-        // YouTube에서 쇼츠 탭임을 나타내는 Activity 클래스명 키워드
-        private val YOUTUBE_SHORTS_CLASS_KEYWORDS = listOf(
-            "short", "reel"  // ShortsActivity, ShortsPagerActivity 등 포함
-        )
     }
 
     private var timer: Timer? = null
     private lateinit var prefs: SharedPreferences
     private var currentPkg: String? = null
-    private var currentCls: String? = null  // Activity 클래스명 추적
+    private var currentCls: String? = null
     private var sessionStartTime = 0L
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onCreate() {
         super.onCreate()
@@ -68,6 +71,7 @@ class AppMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        android.util.Log.i("ShortsDetox", "[SVC] onStartCommand called")
         val notif = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIF_ID, notif, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -77,6 +81,13 @@ class AppMonitorService : Service() {
         prefs.edit().putBoolean(KEY_IS_RUNNING, true).apply()
         currentPkg = prefs.getString(KEY_CURRENT_PKG, null)
         sessionStartTime = prefs.getLong(KEY_SESSION_START, 0L)
+        android.util.Log.i("ShortsDetox", "[SVC] restored: pkg=$currentPkg sessionStart=$sessionStartTime")
+        // 복원된 세션이 비정상적으로 오래됐으면 리셋 (1시간 이상)
+        if (sessionStartTime > 0L && System.currentTimeMillis() - sessionStartTime > 3_600_000L) {
+            android.util.Log.w("ShortsDetox", "[SVC] stale session detected (>${(System.currentTimeMillis() - sessionStartTime)/1000}s), resetting")
+            sessionStartTime = 0L
+            prefs.edit().putLong(KEY_SESSION_START, 0L).apply()
+        }
         startPolling()
         return START_STICKY
     }
@@ -85,24 +96,44 @@ class AppMonitorService : Service() {
         timer?.cancel()
         timer = Timer("AppMonitor", true)
         timer?.scheduleAtFixedRate(object : TimerTask() {
-            override fun run() { try { poll() } catch (e: Exception) {} }
+            override fun run() { try { poll() } catch (e: Exception) {
+                android.util.Log.e("ShortsDetox", "[SVC-POLL] poll() exception: ${e.javaClass.simpleName}: ${e.message}")
+            } }
         }, 0L, 2000L)
     }
 
+    private var pollCount = 0L
+
     private fun poll() {
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+        if (usm == null) {
+            if (pollCount % 30 == 0L) android.util.Log.w("ShortsDetox", "[SVC-POLL] UsageStatsManager is null!")
+            pollCount++
+            return
+        }
         val now = System.currentTimeMillis()
-        val (pkg, cls) = queryForeground(usm, now) ?: return
-        if (pkg == packageName) return
+        val result = queryForeground(usm, now)
+        if (result == null) {
+            if (pollCount % 30 == 0L) android.util.Log.d("ShortsDetox", "[SVC-POLL] #$pollCount queryForeground=null (no fg event)")
+            pollCount++
+            return
+        }
+        val (pkg, cls) = result
+        if (pkg == packageName) { pollCount++; return }
 
         val isShortsNow = isShorts(pkg, cls)
         val changed = pkg != currentPkg || cls != currentCls
 
         if (changed) {
+            android.util.Log.d("ShortsDetox", "[SVC-POLL] #$pollCount APP_CHANGED: ${currentPkg}→${pkg} cls=${cls} isShorts=${isShortsNow}")
             // 이전 세션 저장 (쇼츠였을 경우)
             currentPkg?.let { prev ->
                 if (sessionStartTime > 0L && isShorts(prev, currentCls)) {
+                    val dur = now - sessionStartTime
+                    android.util.Log.d("ShortsDetox", "[SVC-POLL] SAVING prev session: pkg=$prev start=$sessionStartTime dur=${dur}ms (${dur/1000}s)")
                     saveSession(prev, sessionStartTime, now)
+                } else {
+                    android.util.Log.d("ShortsDetox", "[SVC-POLL] prev=$prev NOT saved: sessionStart=$sessionStartTime isShorts=${isShorts(prev, currentCls)}")
                 }
             }
             currentPkg = pkg
@@ -112,7 +143,15 @@ class AppMonitorService : Service() {
                 .putString(KEY_CURRENT_PKG, pkg)
                 .putLong(KEY_SESSION_START, sessionStartTime)
                 .apply()
+            if (isShortsNow) {
+                android.util.Log.d("ShortsDetox", "[SVC-POLL] NEW SHORTS session started: pkg=$pkg cls=$cls startTime=$now")
+            }
+        } else if (isShortsNow && sessionStartTime > 0L && pollCount % 15 == 0L) {
+            // 30초마다 현재 진행 중인 쇼츠 세션 상태 로깅
+            val elapsed = now - sessionStartTime
+            android.util.Log.d("ShortsDetox", "[SVC-POLL] #$pollCount ONGOING shorts: pkg=$pkg elapsed=${elapsed/1000}s")
         }
+        pollCount++
     }
 
     // (packageName, className?) 반환
@@ -138,26 +177,22 @@ class AppMonitorService : Service() {
     }
 
     /**
-     * 쇼츠 여부 판단:
-     * - TikTok: 앱 전체가 쇼츠 형태
-     * - Instagram / Facebook: Reels 중심 (앱 전체 카운트)
-     * - YouTube: Activity 클래스명에 "short" 또는 "reel" 포함 시에만 Shorts 탭
+     * 숏츠/릴스 앱 여부 판단:
+     * - YouTube: 전체 사용시간 추적 (Shorts 탭만 분리 감지 불가)
+     * - TikTok: 앱 전체
+     * - Instagram: 앱 전체 (Reels 포함)
+     * - Facebook: 앱 전체 (Reels 포함)
      */
     private fun isShorts(pkg: String, cls: String? = null): Boolean {
-        return when {
-            pkg.contains("musically") || pkg.contains("tiktok") -> true
-            pkg == "com.instagram.android" || pkg == "com.facebook.katana" -> true
-            pkg == "com.google.android.youtube" -> {
-                val clsLower = cls?.lowercase() ?: ""
-                YOUTUBE_SHORTS_CLASS_KEYWORDS.any { clsLower.contains(it) }
-            }
-            else -> false
-        }
+        return SHORTS_PACKAGES.contains(pkg)
     }
 
     private fun saveSession(pkg: String, start: Long, end: Long) {
         val dur = end - start
-        if (dur < MIN_SESSION_MS) return  // 30초 미만 제외
+        if (dur < MIN_SESSION_MS) {
+            android.util.Log.d("ShortsDetox", "[SVC-SAVE] SKIPPED: dur=${dur}ms < ${MIN_SESSION_MS}ms pkg=$pkg")
+            return
+        }
         val platform = when (pkg) {
             "com.google.android.youtube" -> "youtube"
             "com.zhiliaoapp.musically", "com.ss.android.ugc.tiktok" -> "tiktok"
@@ -166,24 +201,23 @@ class AppMonitorService : Service() {
             else -> "other"
         }
         val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(start))
-        val session = JSONObject().apply {
-            put("id", "bg-${start}-${(Math.random() * 9999).toInt()}")
-            put("platform", platform)
-            put("startTime", start)
-            put("endTime", end)
-            put("durationMs", dur)
-            put("date", date)
-            put("scrollFrequency", 0.0)
-            put("isAutoDetected", true)
+        val entity = AppSessionEntity(
+            packageName = pkg,
+            platform = platform,
+            startTime = start,
+            endTime = end,
+            durationMs = dur,
+            date = date,
+            isAutoDetected = true
+        )
+        serviceScope.launch {
+            try {
+                val id = AppDatabase.getInstance(applicationContext).sessionDao().insert(entity)
+                android.util.Log.i("ShortsDetox", "[SVC-SAVE] ✓ SAVED id=$id platform=$platform date=$date dur=${dur/1000}s")
+            } catch (e: Exception) {
+                android.util.Log.e("ShortsDetox", "[SVC-SAVE] DB insert failed: ${e.message}")
+            }
         }
-        val arr = try {
-            JSONArray(prefs.getString(KEY_PENDING_SESSIONS, "[]") ?: "[]")
-        } catch (e: Exception) { JSONArray() }
-        while (arr.length() >= 100) arr.remove(0)
-        arr.put(session)
-        prefs.edit().putString(KEY_PENDING_SESSIONS, arr.toString()).apply()
-
-        // 백그라운드에서도 임계값 초과 시 즉시 알림 발송
         checkAndSendAlertNotification(dur)
     }
 
@@ -296,12 +330,19 @@ class AppMonitorService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        android.util.Log.i("ShortsDetox", "[SVC] onDestroy called, saving final session if needed")
         timer?.cancel()
         prefs.edit().putBoolean(KEY_IS_RUNNING, false).apply()
+        serviceScope.cancel()
         val now = System.currentTimeMillis()
         currentPkg?.let { pkg ->
-            if (sessionStartTime > 0L && isShorts(pkg, currentCls)) saveSession(pkg, sessionStartTime, now)
-        }
+            if (sessionStartTime > 0L && isShorts(pkg, currentCls)) {
+                android.util.Log.i("ShortsDetox", "[SVC] onDestroy: saving final session pkg=$pkg dur=${(now - sessionStartTime)/1000}s")
+                saveSession(pkg, sessionStartTime, now)
+            } else {
+                android.util.Log.d("ShortsDetox", "[SVC] onDestroy: no active shorts session to save (pkg=$pkg sessionStart=$sessionStartTime)")
+            }
+        } ?: android.util.Log.d("ShortsDetox", "[SVC] onDestroy: currentPkg=null, nothing to save")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

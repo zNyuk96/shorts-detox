@@ -130,7 +130,7 @@ class PermissionsService {
   private async openAndroidSettings(): Promise<void> {
     try {
       // Android 설정 앱의 앱 권한 페이지로 이동
-      const packageName = "space.manus.shorts.detox"; // 실제 패키지명으로 변경 필요
+      const packageName = "com.shortsdetox";
       Linking.openURL(`package:${packageName}`);
     } catch (error) {
       console.error("[PermissionsService] Error opening Android settings:", error);

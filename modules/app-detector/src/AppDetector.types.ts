@@ -8,8 +8,13 @@ export interface AppDetectorInterface {
   isBackgroundMonitoringActive(): Promise<boolean>;
   getPendingSessions(): Promise<string>;
   clearPendingSessions(): Promise<boolean>;
+  getSessionsByDate(date: string): Promise<string>;
+  getTotalDurationMs(packageName: string, date: string): Promise<number>;
   openUsageStatsSettings(): Promise<boolean>;
   setAlertThreshold(minutes: number): Promise<boolean>;
-  getLiveSession(): Promise<string | null>; // JSON: { pkg: string, startTime: number } | null
-  getPermissionDiagnostics(): Promise<string>; // JSON diagnostics
+  getLiveSession(): Promise<string | null>;
+  getPermissionDiagnostics(): Promise<string>;
+  startVpnBlocking(): Promise<boolean>;
+  stopVpnBlocking(): Promise<boolean>;
+  isVpnActive(): Promise<boolean>;
 }

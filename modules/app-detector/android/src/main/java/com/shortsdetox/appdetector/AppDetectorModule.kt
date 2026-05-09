@@ -1,4 +1,4 @@
-package space.manus.shorts.detox.appdetector
+package com.shortsdetox.appdetector
 
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
@@ -11,6 +11,14 @@ import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.Promise
+import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
+import org.json.JSONObject
+import com.shortsdetox.appdetector.db.AppDatabase
+import com.shortsdetox.appdetector.vpn.ShortsVpnService
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class AppDetectorModule : Module() {
 
@@ -240,23 +248,111 @@ class AppDetectorModule : Module() {
       } catch (e: Exception) { promise.resolve(null) }
     }
 
-    // ── 저장된 세션 조회 (JSON string) ──
+    // ── 저장된 세션 조회 (Room DB → JSON string, JS 호환 포맷) ──
     AsyncFunction("getPendingSessions") { promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve("[]"); return@AsyncFunction }
-        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
-        promise.resolve(prefs.getString(AppMonitorService.KEY_PENDING_SESSIONS, "[]") ?: "[]")
+        val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+        val sessions = runBlocking {
+          AppDatabase.getInstance(ctx).sessionDao().getSessionsByDate(today)
+        }
+        val arr = JSONArray()
+        sessions.forEach { entity ->
+          arr.put(JSONObject().apply {
+            put("id", "bg-${entity.startTime}-${entity.id}")
+            put("platform", entity.platform)
+            put("startTime", entity.startTime)
+            put("endTime", entity.endTime)
+            put("durationMs", entity.durationMs)
+            put("date", entity.date)
+            put("scrollFrequency", 0.0)
+            put("isAutoDetected", true)
+          })
+        }
+        promise.resolve(arr.toString())
       } catch (e: Exception) { promise.resolve("[]") }
     }
 
-    // ── 저장된 세션 초기화 (.commit() 으로 동기 쓰기 → 크래시 시 이중 카운팅 방지) ──
+    // ── Room DB 기반: id 중복 처리는 JS addSession에서 수행하므로 no-op ──
     AsyncFunction("clearPendingSessions") { promise: Promise ->
+      promise.resolve(true)
+    }
+
+    // ── 날짜별 세션 조회 (JSON string) ──
+    AsyncFunction("getSessionsByDate") { date: String, promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve("[]"); return@AsyncFunction }
+        val sessions = runBlocking {
+          AppDatabase.getInstance(ctx).sessionDao().getSessionsByDate(date)
+        }
+        val arr = JSONArray()
+        sessions.forEach { entity ->
+          arr.put(JSONObject().apply {
+            put("id", "bg-${entity.startTime}-${entity.id}")
+            put("platform", entity.platform)
+            put("packageName", entity.packageName)
+            put("startTime", entity.startTime)
+            put("endTime", entity.endTime)
+            put("durationMs", entity.durationMs)
+            put("date", entity.date)
+            put("isAutoDetected", entity.isAutoDetected)
+          })
+        }
+        promise.resolve(arr.toString())
+      } catch (e: Exception) { promise.resolve("[]") }
+    }
+
+    // ── 날짜별 총 사용시간 조회 (ms) ──
+    AsyncFunction("getTotalDurationMs") { pkg: String, date: String, promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(0L); return@AsyncFunction }
+        val total = runBlocking {
+          AppDatabase.getInstance(ctx).sessionDao().getTotalDurationMs(pkg, date)
+        }
+        promise.resolve(total)
+      } catch (e: Exception) { promise.resolve(0L) }
+    }
+
+    // ── VPN 차단 시작 (YouTube Shorts DNS 차단) ──
+    AsyncFunction("startVpnBlocking") { promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
-        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
-        val success = prefs.edit().putString(AppMonitorService.KEY_PENDING_SESSIONS, "[]").commit()
-        promise.resolve(success)
+        val activity = appContext.currentActivity
+        if (activity != null) {
+          val vpnIntent = android.net.VpnService.prepare(ctx)
+          if (vpnIntent != null) {
+            // VPN 권한 동의 필요 → JS에서 IntentLauncher로 처리
+            promise.resolve(false)
+            return@AsyncFunction
+          }
+        }
+        val intent = Intent(ctx, ShortsVpnService::class.java).apply {
+          action = ShortsVpnService.ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(intent)
+        else ctx.startService(intent)
+        promise.resolve(true)
+      } catch (e: Exception) {
+        android.util.Log.e("ShortsDetox", "[VPN] startVpnBlocking error: ${e.message}")
+        promise.resolve(false)
+      }
+    }
+
+    // ── VPN 차단 중지 ──
+    AsyncFunction("stopVpnBlocking") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(false); return@AsyncFunction }
+        val intent = Intent(ctx, ShortsVpnService::class.java).apply {
+          action = ShortsVpnService.ACTION_STOP
+        }
+        ctx.startService(intent)
+        promise.resolve(true)
       } catch (e: Exception) { promise.resolve(false) }
+    }
+
+    // ── VPN 상태 확인 ──
+    AsyncFunction("isVpnActive") { promise: Promise ->
+      promise.resolve(ShortsVpnService.isRunning)
     }
 
     // ── 알림 임계값 설정 (네이티브 백그라운드 알림용) ──

@@ -1,7 +1,8 @@
-import { useAuth } from "@/hooks/use-auth";
 import { useColors } from "@/hooks/use-colors";
 import { useAppContext } from "@/lib/app-context";
-import { startOAuthLogin } from "@/constants/oauth";
+import { GOOGLE_WEB_CLIENT_ID } from "@/constants/google-auth";
+import auth from "@react-native-firebase/auth";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -15,6 +16,8 @@ import {
   Text,
   View,
 } from "react-native";
+
+GoogleSignin.configure({ webClientId: GOOGLE_WEB_CLIENT_ID });
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -38,7 +41,6 @@ const ONBOARDING_SLIDES = [
 
 export default function LoginScreen() {
   const colors = useColors();
-  const { isAuthenticated, loading } = useAuth();
   const { setTestMode } = useAppContext();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -55,10 +57,25 @@ export default function LoginScreen() {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated && !loading) {
-      router.replace("/(tabs)");
+    const unsubscribe = auth().onAuthStateChanged((user) => {
+      if (user) router.replace("/(tabs)");
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsLoggingIn(true);
+      await GoogleSignin.hasPlayServices();
+      const { data } = await GoogleSignin.signIn();
+      const credential = auth.GoogleAuthProvider.credential(data!.idToken);
+      await auth().signInWithCredential(credential);
+      // onAuthStateChanged will redirect to tabs
+    } catch (e) {
+      console.error("[Login] Google Sign-In error:", e);
+      setIsLoggingIn(false);
     }
-  }, [isAuthenticated, loading]);
+  };
 
   const handleScroll = (e: any) => {
     const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
@@ -66,31 +83,12 @@ export default function LoginScreen() {
   };
 
   const handleTestModeStart = async () => {
-    // 전역 테스트 모드 활성화 (AsyncStorage에 저장) 후 홈 화면으로 이동
     setTestMode(true);
-    // AsyncStorage 저장이 완료될 때까지 약간 대기
     await new Promise((resolve) => setTimeout(resolve, 100));
     router.replace("/(tabs)");
   };
 
-  const handleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      await startOAuthLogin();
-    } catch {
-      // ignore
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+  const handleLogin = () => handleGoogleSignIn();
 
   const CARD_WIDTH = SCREEN_WIDTH - 64;
 
@@ -102,7 +100,7 @@ export default function LoginScreen() {
         style={({ pressed }) => [styles.testModeButton, { opacity: pressed ? 0.7 : 1 }]}
       >
         <Text style={[styles.testModeText, { color: colors.foreground }]}>
-          {showTestMode ? "🔧 TEST" : "🔒 PROD"}
+          {showTestMode ? "TEST" : "PROD"}
         </Text>
       </Pressable>
 
@@ -121,7 +119,7 @@ export default function LoginScreen() {
         </Text>
       </Animated.View>
 
-      {/* Onboarding Card - single card at a time, full width */}
+      {/* Onboarding Card */}
       <Animated.View style={[styles.cardArea, { opacity: fadeAnim }]}>
         <ScrollView
           ref={scrollRef}
@@ -173,7 +171,6 @@ export default function LoginScreen() {
               { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 },
             ]}
           >
-            <Text style={styles.primaryBtnIcon}>⚡</Text>
             <Text style={styles.primaryBtnText}>테스트 모드로 시작</Text>
           </Pressable>
         ) : (
@@ -200,7 +197,7 @@ export default function LoginScreen() {
 
         <Text style={[styles.terms, { color: colors.muted }]}>
           {showTestMode
-            ? "🔧 테스트 모드: 로그인 없이 앱을 사용할 수 있습니다"
+            ? "테스트 모드: 로그인 없이 앱을 사용할 수 있습니다"
             : "계속 진행하면 서비스 이용약관 및 개인정보처리방침에 동의하는 것으로 간주됩니다."}
         </Text>
       </Animated.View>
@@ -209,11 +206,6 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   container: {
     flex: 1,
     paddingTop: 60,
@@ -303,9 +295,6 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 16,
     borderRadius: 16,
-  },
-  primaryBtnIcon: {
-    fontSize: 18,
   },
   primaryBtnText: {
     fontSize: 16,

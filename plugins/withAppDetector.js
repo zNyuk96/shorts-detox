@@ -45,10 +45,10 @@ const withAndroidConfig = (config) => {
     const hasService = (name) => app.service.some((s) => s.$?.["android:name"] === name);
 
     // AppMonitorService (Foreground Service)
-    if (!hasService("space.manus.shorts.detox.appdetector.AppMonitorService")) {
+    if (!hasService("com.shortsdetox.appdetector.AppMonitorService")) {
       app.service.push({
         $: {
-          "android:name": "space.manus.shorts.detox.appdetector.AppMonitorService",
+          "android:name": "com.shortsdetox.appdetector.AppMonitorService",
           "android:foregroundServiceType": "dataSync",
           "android:exported": "false",
         },

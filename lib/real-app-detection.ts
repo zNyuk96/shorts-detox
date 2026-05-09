@@ -27,6 +27,7 @@ class RealAppDetectionService {
   async start(): Promise<void> {
     if (this.isTracking) return;
     this.isTracking = true;
+    debugLogger.log("DETECT", "RealAppDetectionService.start() 호출됨");
 
     if (Platform.OS === "android") {
       this.appStateSubscription = AppState.addEventListener(
@@ -41,6 +42,7 @@ class RealAppDetectionService {
   async stop(): Promise<void> {
     if (!this.isTracking) return;
     this.isTracking = false;
+    debugLogger.log("DETECT", "RealAppDetectionService.stop() 호출됨");
     this.appStateSubscription?.remove();
     this.appStateSubscription = null;
     this.stopLiveSessionPolling();
@@ -48,6 +50,7 @@ class RealAppDetectionService {
   }
 
   private handleAppState = async (state: AppStateStatus) => {
+    debugLogger.log("DETECT", `AppState 변경: ${state}`);
     if (state === "active") {
       // 동시에 여러 loadPendingSessions() 호출 방지
       if (!this.isLoadingPending) {
@@ -55,10 +58,12 @@ class RealAppDetectionService {
         try {
           await this.loadPendingSessions();
         } catch (e) {
-          console.warn("[RealAppDetection] handleAppState load error:", e);
+          debugLogger.log("DETECT", `handleAppState load 에러: ${e}`);
         } finally {
           this.isLoadingPending = false;
         }
+      } else {
+        debugLogger.log("DETECT", "loadPendingSessions 이미 진행 중, 스킵");
       }
       this.startLiveSessionPolling();
     } else if (state === "background" || state === "inactive") {
@@ -103,22 +108,34 @@ class RealAppDetectionService {
   async loadPendingSessions(): Promise<void> {
     if (Platform.OS !== "android") return;
     try {
+      debugLogger.log("PENDING", "loadPendingSessions() 호출됨");
       const json = await AppDetector.getPendingSessions();
+      debugLogger.log("PENDING", `raw JSON 길이: ${json.length}`);
       const sessions: any[] = JSON.parse(json);
       if (!Array.isArray(sessions) || sessions.length === 0) {
         debugLogger.log("PENDING", "pendingSessions: 0건");
         return;
       }
 
+      debugLogger.log("PENDING", `pendingSessions 수신: ${sessions.length}건`);
       let importedCount = 0;
+      let skippedCount = 0;
       for (const s of sessions) {
-        if (!s.id || !s.durationMs || s.durationMs < 3000) continue;
+        if (!s.id || !s.durationMs || s.durationMs < 3000) {
+          debugLogger.log("PENDING", `SKIP: id=${s.id} dur=${s.durationMs}ms`);
+          skippedCount++;
+          continue;
+        }
         // Kotlin과 동일하게 로컬 타임존 기준 날짜 계산 (date 필드 유실/오류 방어)
         const date = isValidDateString(s.date)
           ? s.date
           : s.startTime
             ? toLocalDateString(s.startTime)
             : getTodayDateString();
+
+        const durSec = Math.round(s.durationMs / 1000);
+        debugLogger.log("PENDING", `IMPORT: id=${s.id} platform=${s.platform} date=${date} dur=${durSec}s`);
+
         await addSession({
           id: s.id,
           platform: s.platform || "other",
@@ -132,15 +149,18 @@ class RealAppDetectionService {
         importedCount++;
       }
 
-      debugLogger.log("PENDING", `pendingSessions 로드: ${importedCount}/${sessions.length}건`);
+      debugLogger.log("PENDING", `결과: imported=${importedCount} skipped=${skippedCount} total=${sessions.length}`);
       if (importedCount > 0) {
         const cleared = await AppDetector.clearPendingSessions();
+        debugLogger.log("PENDING", `clearPendingSessions 결과: ${cleared}`);
         if (!cleared) {
-          console.warn("[RealAppDetection] clearPendingSessions failed, will retry");
+          debugLogger.log("PENDING", "clearPendingSessions 실패! 다음 로드 시 중복 가능");
         }
         this.onSessionsLoaded?.();
+        debugLogger.log("PENDING", "onSessionsLoaded 콜백 호출됨 (refreshData 트리거)");
       }
     } catch (e) {
+      debugLogger.log("PENDING", `loadPendingSessions 에러: ${e}`);
       console.warn("[RealAppDetection] Failed to load pending sessions:", e);
     }
   }
