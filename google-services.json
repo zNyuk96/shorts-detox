@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "569851561161",
+    "project_id": "shorts-detox",
+    "storage_bucket": "shorts-detox.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:569851561161:android:ae30c27f8267480f573918",
+        "android_client_info": {
+          "package_name": "com.shortsdetox"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "569851561161-jb1vc18i87unajilsjcvsc4o8kf19bqo.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.shortsdetox",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "569851561161-rlee2kppatad0hfikepgfgish0uepjhi.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsBNU8hSlAGX1oYFpL-UJW95ApiusXzWs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "569851561161-rlee2kppatad0hfikepgfgish0uepjhi.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
