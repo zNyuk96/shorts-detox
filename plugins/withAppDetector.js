@@ -21,6 +21,7 @@ const withAndroidConfig = (config) => {
     addPerm("android.permission.PACKAGE_USAGE_STATS", { "tools:ignore": "ProtectedPermissions" });
     addPerm("android.permission.FOREGROUND_SERVICE");
     addPerm("android.permission.FOREGROUND_SERVICE_DATA_SYNC");
+    addPerm("android.permission.BIND_VPN_SERVICE");
 
     // queries
     if (!manifest.manifest.queries) manifest.manifest.queries = [{ package: [] }];
@@ -52,6 +53,20 @@ const withAndroidConfig = (config) => {
           "android:foregroundServiceType": "dataSync",
           "android:exported": "false",
         },
+      });
+    }
+
+    // ShortsVpnService (VPN DNS 차단)
+    if (!hasService("com.shortsdetox.appdetector.vpn.ShortsVpnService")) {
+      app.service.push({
+        $: {
+          "android:name": "com.shortsdetox.appdetector.vpn.ShortsVpnService",
+          "android:permission": "android.permission.BIND_VPN_SERVICE",
+          "android:exported": "false",
+        },
+        "intent-filter": [
+          { action: [{ $: { "android:name": "android.net.VpnService" } }] },
+        ],
       });
     }
 
