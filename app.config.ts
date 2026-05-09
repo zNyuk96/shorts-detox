@@ -26,7 +26,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: "com.shortsdetox",
-    versionCode: 8,
+    versionCode: 9,
     permissions: [
       "POST_NOTIFICATIONS",
       "PACKAGE_USAGE_STATS",
