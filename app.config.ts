@@ -52,6 +52,7 @@ const config: ExpoConfig = {
     "expo-router",
     "@react-native-firebase/app",
     "@react-native-google-signin/google-signin",
+    "./plugins/withKsp",
     "./plugins/withAppDetector",
     [
       "expo-splash-screen",
