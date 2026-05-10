@@ -11,7 +11,6 @@ import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.Promise
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import com.shortsdetox.appdetector.db.AppDatabase
@@ -253,9 +252,7 @@ class AppDetectorModule : Module() {
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve("[]"); return@AsyncFunction }
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-        val sessions = runBlocking {
-          AppDatabase.getInstance(ctx).sessionDao().getSessionsByDate(today)
-        }
+        val sessions = AppDatabase.getInstance(ctx).getSessionsByDate(today)
         val arr = JSONArray()
         sessions.forEach { entity ->
           arr.put(JSONObject().apply {
@@ -282,9 +279,7 @@ class AppDetectorModule : Module() {
     AsyncFunction("getSessionsByDate") { date: String, promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve("[]"); return@AsyncFunction }
-        val sessions = runBlocking {
-          AppDatabase.getInstance(ctx).sessionDao().getSessionsByDate(date)
-        }
+        val sessions = AppDatabase.getInstance(ctx).getSessionsByDate(date)
         val arr = JSONArray()
         sessions.forEach { entity ->
           arr.put(JSONObject().apply {
@@ -306,9 +301,7 @@ class AppDetectorModule : Module() {
     AsyncFunction("getTotalDurationMs") { pkg: String, date: String, promise: Promise ->
       try {
         val ctx = appContext.reactContext ?: run { promise.resolve(0L); return@AsyncFunction }
-        val total = runBlocking {
-          AppDatabase.getInstance(ctx).sessionDao().getTotalDurationMs(pkg, date)
-        }
+        val total = AppDatabase.getInstance(ctx).getTotalDurationMs(pkg, date)
         promise.resolve(total)
       } catch (e: Exception) { promise.resolve(0L) }
     }

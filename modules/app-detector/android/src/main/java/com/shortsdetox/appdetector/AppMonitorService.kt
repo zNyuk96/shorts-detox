@@ -212,7 +212,7 @@ class AppMonitorService : Service() {
         )
         serviceScope.launch {
             try {
-                val id = AppDatabase.getInstance(applicationContext).sessionDao().insert(entity)
+                val id = AppDatabase.getInstance(applicationContext).insert(entity)
                 android.util.Log.i("ShortsDetox", "[SVC-SAVE] ✓ SAVED id=$id platform=$platform date=$date dur=${dur/1000}s")
             } catch (e: Exception) {
                 android.util.Log.e("ShortsDetox", "[SVC-SAVE] DB insert failed: ${e.message}")
