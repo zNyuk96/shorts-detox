@@ -3,7 +3,6 @@ package com.shortsdetox.appdetector
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
@@ -39,11 +38,10 @@ class AppMonitorService : Service() {
         const val KEY_TODAY_TOTAL_MS = "todayTotalMs"
         const val KEY_LAST_ALERT_TIME = "lastAlertTime"
         const val CHANNEL_ID = "shorts_monitor"
-        const val ALERT_CHANNEL_ID = "shorts_alert"
         const val NOTIF_ID = 7001
-        const val ALERT_NOTIF_ID = 7002
+        const val TAG_SVC = "ShortsDetox"
         const val MIN_SESSION_MS = 30_000L // 30초 미만 세션 제외
-        const val ALERT_MIN_INTERVAL_MS = 5 * 60_000L // 5분 이내 중복 알림 방지
+        const val ALERT_MIN_INTERVAL_MS = 5 * 60_000L // 5분 이내 중복 포그라운드 전환 방지
 
         // 쇼츠 앱 패키지 (사용량 통계 조회 대상)
         val SHORTS_PACKAGES = setOf(
@@ -67,7 +65,6 @@ class AppMonitorService : Service() {
         super.onCreate()
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         createNotifChannel()
-        createAlertChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -243,42 +240,27 @@ class AppMonitorService : Service() {
             if (shouldAlert) editor.putLong(KEY_LAST_ALERT_TIME, now)
             editor.apply()
 
-            if (shouldAlert) sendAlertNotification(newTotal, thresholdMs)
+            if (shouldAlert) bringAppToForeground(newTotal, thresholdMs)
         } catch (e: Exception) {}
     }
 
-    private fun sendAlertNotification(totalMs: Long, thresholdMs: Long) {
-        val nm = getSystemService(NotificationManager::class.java) ?: return
-        val totalMin = totalMs / 60_000L
-        val thresholdMin = thresholdMs / 60_000L
-
-        val intent = packageManager.getLaunchIntentForPackage(packageName)
-        val pi = PendingIntent.getActivity(
-            this, 1, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, ALERT_CHANNEL_ID)
-                .setContentTitle("숏츠 디톡스")
-                .setContentText("${totalMin}분 시청했어요! 목표 ${thresholdMin}분 초과. 잠깐 쉬어가세요 🧘")
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentIntent(pi)
-                .setAutoCancel(true)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-                .setContentTitle("숏츠 디톡스")
-                .setContentText("${totalMin}분 시청했어요! 목표 ${thresholdMin}분 초과. 잠깐 쉬어가세요 🧘")
-                .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentIntent(pi)
-                .setAutoCancel(true)
-                .setPriority(Notification.PRIORITY_HIGH)
-                .build()
+    private fun bringAppToForeground(totalMs: Long, thresholdMs: Long) {
+        try {
+            val totalMin = totalMs / 60_000L
+            val thresholdMin = thresholdMs / 60_000L
+            android.util.Log.i(TAG_SVC, "[ALERT] 임계값 초과: ${totalMin}분/${thresholdMin}분 → 앱 포그라운드 전환")
+            val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                putExtra("alert_total_min", totalMin)
+                putExtra("alert_threshold_min", thresholdMin)
+            } ?: run {
+                android.util.Log.e(TAG_SVC, "[ALERT] getLaunchIntent 실패")
+                return
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG_SVC, "[ALERT] bringAppToForeground 실패: ${e.message}")
         }
-
-        nm.notify(ALERT_NOTIF_ID, notif)
     }
 
     private fun createNotifChannel() {
@@ -291,15 +273,6 @@ class AppMonitorService : Service() {
         }
     }
 
-    private fun createAlertChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(ALERT_CHANNEL_ID, "숏츠 시청 알림", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "쇼츠 시청 시간 초과 알림"
-                setShowBadge(true)
-            }
-            getSystemService(NotificationManager::class.java)?.createNotificationChannel(ch)
-        }
-    }
 
     private fun buildNotification(): Notification {
         val intent = packageManager.getLaunchIntentForPackage(packageName)
