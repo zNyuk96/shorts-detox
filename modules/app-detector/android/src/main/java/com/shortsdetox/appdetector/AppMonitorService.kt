@@ -333,16 +333,39 @@ class AppMonitorService : Service() {
         android.util.Log.i("ShortsDetox", "[SVC] onDestroy called, saving final session if needed")
         timer?.cancel()
         prefs.edit().putBoolean(KEY_IS_RUNNING, false).apply()
-        serviceScope.cancel()
         val now = System.currentTimeMillis()
         currentPkg?.let { pkg ->
             if (sessionStartTime > 0L && isShorts(pkg, currentCls)) {
-                android.util.Log.i("ShortsDetox", "[SVC] onDestroy: saving final session pkg=$pkg dur=${(now - sessionStartTime)/1000}s")
-                saveSession(pkg, sessionStartTime, now)
+                val dur = now - sessionStartTime
+                android.util.Log.i("ShortsDetox", "[SVC] onDestroy: saving final session pkg=$pkg dur=${dur/1000}s")
+                if (dur >= MIN_SESSION_MS) {
+                    try {
+                        val platform = when (pkg) {
+                            "com.google.android.youtube" -> "youtube"
+                            "com.zhiliaoapp.musically", "com.ss.android.ugc.tiktok" -> "tiktok"
+                            "com.instagram.android" -> "instagram"
+                            "com.facebook.katana" -> "facebook"
+                            else -> "other"
+                        }
+                        val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(sessionStartTime))
+                        val entity = com.shortsdetox.appdetector.db.AppSessionEntity(
+                            packageName = pkg, platform = platform,
+                            startTime = sessionStartTime, endTime = now,
+                            durationMs = dur, date = date, isAutoDetected = true
+                        )
+                        val id = com.shortsdetox.appdetector.db.AppDatabase.getInstance(applicationContext).insert(entity)
+                        android.util.Log.i("ShortsDetox", "[SVC] onDestroy: ✓ saved id=$id dur=${dur/1000}s")
+                    } catch (e: Exception) {
+                        android.util.Log.e("ShortsDetox", "[SVC] onDestroy: DB insert failed: ${e.message}")
+                    }
+                } else {
+                    android.util.Log.d("ShortsDetox", "[SVC] onDestroy: dur=${dur}ms < min, skipped")
+                }
             } else {
                 android.util.Log.d("ShortsDetox", "[SVC] onDestroy: no active shorts session to save (pkg=$pkg sessionStart=$sessionStartTime)")
             }
         } ?: android.util.Log.d("ShortsDetox", "[SVC] onDestroy: currentPkg=null, nothing to save")
+        serviceScope.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

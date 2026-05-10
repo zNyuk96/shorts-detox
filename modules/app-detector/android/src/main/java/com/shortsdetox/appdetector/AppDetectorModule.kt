@@ -459,7 +459,7 @@ class AppDetectorModule : Module() {
         @Suppress("DEPRECATION")
         appOps.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, uid, context.packageName)
       }
-      val result = mode == android.app.AppOpsManager.MODE_ALLOWED || mode == android.app.AppOpsManager.MODE_DEFAULT
+      val result = mode == android.app.AppOpsManager.MODE_ALLOWED
       android.util.Log.d(tag, "[PERM-FN] AppOps: mode=$mode, uid=$uid, pkg=${context.packageName} → $result")
       result
     } else { true }

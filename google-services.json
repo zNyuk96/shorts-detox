@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "569851561161-ql327sql1t26jlaipme8rt0fbfe4f448.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.shortsdetox",
+            "certificate_hash": "109f36fe76c62671e80d3f207b9a90cd16dc8451"
+          }
+        },
+        {
           "client_id": "569851561161-rlee2kppatad0hfikepgfgish0uepjhi.apps.googleusercontent.com",
           "client_type": 3
         }
