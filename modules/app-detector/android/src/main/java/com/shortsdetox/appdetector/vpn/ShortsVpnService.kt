@@ -107,7 +107,8 @@ class ShortsVpnService : VpnService() {
                 continue
             }
 
-            val domain = extractDnsQuery(packet) ?: run {
+            val domain = extractDnsQuery(packet)
+            if (domain == null) {
                 forwardDns(packet, upstreamDns, vpnOutput)
                 continue
             }
@@ -186,7 +187,7 @@ class ShortsVpnService : VpnService() {
 
             val response = buildIpUdpPacket(
                 srcIp = upstream.address,
-                dstIp = byteArrayOf(10, 111, 222, 1),
+                dstIp = byteArrayOf(10, 111, 222.toByte(), 1),
                 srcPort = 53,
                 dstPort = ((query[22].toInt() and 0xFF) shl 8) or (query[23].toInt() and 0xFF),
                 payload = responsePacket.data.copyOf(responsePacket.length)
