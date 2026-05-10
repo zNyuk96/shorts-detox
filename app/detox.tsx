@@ -83,6 +83,9 @@ export default function DetoxScreen() {
     } else if (type === "meditation") {
       router.replace("/meditation" as any);
     } else {
+      if (router.canDismiss()) {
+        router.dismissAll();
+      }
       router.replace("/(tabs)");
     }
   };

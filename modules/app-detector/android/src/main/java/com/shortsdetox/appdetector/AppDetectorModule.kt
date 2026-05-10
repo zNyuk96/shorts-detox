@@ -306,6 +306,24 @@ class AppDetectorModule : Module() {
       } catch (e: Exception) { promise.resolve(0L) }
     }
 
+    // ── 임계값 초과 알림 pending 조회 및 초기화 ──
+    AsyncFunction("getAndClearPendingAlert") { promise: Promise ->
+      try {
+        val ctx = appContext.reactContext ?: run { promise.resolve(null); return@AsyncFunction }
+        val prefs = ctx.getSharedPreferences(AppMonitorService.PREFS_NAME, Context.MODE_PRIVATE)
+        val pending = prefs.getBoolean(AppMonitorService.KEY_ALERT_PENDING, false)
+        if (!pending) { promise.resolve(null); return@AsyncFunction }
+        val totalMs = prefs.getLong(AppMonitorService.KEY_ALERT_TOTAL_MS_NATIVE, 0L)
+        val thresholdMs = prefs.getLong(AppMonitorService.KEY_ALERT_THRESHOLD_MS_NATIVE, 0L)
+        prefs.edit().putBoolean(AppMonitorService.KEY_ALERT_PENDING, false).apply()
+        val json = org.json.JSONObject().apply {
+          put("totalMs", totalMs)
+          put("thresholdMs", thresholdMs)
+        }
+        promise.resolve(json.toString())
+      } catch (e: Exception) { promise.resolve(null) }
+    }
+
     // ── VPN 차단 시작 (YouTube Shorts DNS 차단) ──
     AsyncFunction("startVpnBlocking") { promise: Promise ->
       try {

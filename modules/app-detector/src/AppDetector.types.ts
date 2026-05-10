@@ -17,4 +17,5 @@ export interface AppDetectorInterface {
   startVpnBlocking(): Promise<boolean>;
   stopVpnBlocking(): Promise<boolean>;
   isVpnActive(): Promise<boolean>;
+  getAndClearPendingAlert(): Promise<string | null>;
 }

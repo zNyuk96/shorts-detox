@@ -37,6 +37,9 @@ class AppMonitorService : Service() {
         const val KEY_TODAY_DATE_ALERT = "todayDateAlert"
         const val KEY_TODAY_TOTAL_MS = "todayTotalMs"
         const val KEY_LAST_ALERT_TIME = "lastAlertTime"
+        const val KEY_ALERT_PENDING = "alertPending"
+        const val KEY_ALERT_TOTAL_MS_NATIVE = "alertTotalMsNative"
+        const val KEY_ALERT_THRESHOLD_MS_NATIVE = "alertThresholdMsNative"
         const val CHANNEL_ID = "shorts_monitor"
         const val NOTIF_ID = 7001
         const val TAG_SVC = "ShortsDetox"
@@ -249,10 +252,14 @@ class AppMonitorService : Service() {
             val totalMin = totalMs / 60_000L
             val thresholdMin = thresholdMs / 60_000L
             android.util.Log.i(TAG_SVC, "[ALERT] 임계값 초과: ${totalMin}분/${thresholdMin}분 → 앱 포그라운드 전환")
+            // JS PendingDetoxHandler가 읽어서 detox 화면으로 이동
+            prefs.edit()
+                .putBoolean(KEY_ALERT_PENDING, true)
+                .putLong(KEY_ALERT_TOTAL_MS_NATIVE, totalMs)
+                .putLong(KEY_ALERT_THRESHOLD_MS_NATIVE, thresholdMs)
+                .apply()
             val intent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("alert_total_min", totalMin)
-                putExtra("alert_threshold_min", thresholdMin)
             } ?: run {
                 android.util.Log.e(TAG_SVC, "[ALERT] getLaunchIntent 실패")
                 return

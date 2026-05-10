@@ -21,6 +21,7 @@ const stub: AppDetectorInterface = {
   startVpnBlocking: async () => false,
   stopVpnBlocking: async () => false,
   isVpnActive: async () => false,
+  getAndClearPendingAlert: async () => null,
 };
 
 const createAndroidModule = (): AppDetectorInterface => {
@@ -45,6 +46,7 @@ const createAndroidModule = (): AppDetectorInterface => {
       startVpnBlocking: () => native.startVpnBlocking(),
       stopVpnBlocking: () => native.stopVpnBlocking(),
       isVpnActive: () => native.isVpnActive(),
+      getAndClearPendingAlert: () => native.getAndClearPendingAlert(),
     };
   } catch (e) {
     if (__DEV__) console.warn("[AppDetector] Native module not found. Run prebuild + dev build.", e);
